@@ -1,0 +1,54 @@
+"""
+Scrape session models for request/response validation.
+"""
+from pydantic import BaseModel, Field, HttpUrl
+from typing import Optional, Dict, Any
+from datetime import datetime
+from uuid import UUID
+
+class ScrapedSessionBase(BaseModel):
+    """Base model for scraped session data."""
+    url: HttpUrl
+
+class ScrapedSessionCreate(ScrapedSessionBase):
+    """Model for creating a new scraped session."""
+    project_id: UUID
+    session_id: str
+
+class ScrapedSessionResponse(ScrapedSessionBase):
+    """Model for scraped session response."""
+    id: UUID
+    project_id: UUID
+    scraped_at: datetime
+    status: str  # 'Scraped', 'Embedded for RAG', 'Error'
+    markdown_content: Optional[str] = None
+    structured_data: Optional[Dict[str, Any]] = None
+    download_link_json: Optional[str] = None
+    download_link_csv: Optional[str] = None
+
+    class Config:
+        from_attributes = True
+
+class InteractiveScrapingInitiate(BaseModel):
+    """Model for initiating interactive scraping."""
+    initial_url: HttpUrl
+
+class InteractiveScrapingResponse(BaseModel):
+    """Model for interactive scraping response."""
+    interactive_target_url: HttpUrl
+    session_id: str
+
+class ExecuteScrapeRequest(BaseModel):
+    """Model for executing scraping request."""
+    current_page_url: str  # Changed from HttpUrl to str to avoid serialization issues
+    session_id: str
+    api_keys: Optional[Dict[str, str]] = None  # Should contain 'api_key' and 'endpoint' for Azure OpenAI
+    force_refresh: Optional[bool] = False  # Whether to bypass cache and fetch fresh content
+
+class ExecuteScrapeResponse(BaseModel):
+    """Model for executing scraping response."""
+    status: str
+    message: str
+    download_links: Optional[Dict[str, str]] = None
+    rag_status: Optional[str] = None
+    embedding_cost_if_any: Optional[float] = None

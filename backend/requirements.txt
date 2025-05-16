@@ -1,0 +1,14 @@
+fastapi>=0.95.0
+uvicorn>=0.22.0
+pydantic>=2.0.0
+pydantic-settings>=2.0.0
+python-dotenv>=1.0.0
+supabase>=1.0.0
+tiktoken>=0.3.0
+numpy>=1.24.0
+httpx>=0.24.0
+python-multipart>=0.0.6
+# crawl4ai>=0.1.0  # This is a placeholder, you'd need to find or create a real package
+# Azure OpenAI specific packages
+azure-identity>=1.12.0  # For Azure authentication (if needed)
+azure-core>=1.26.0      # Core functionality for Azure SDK
