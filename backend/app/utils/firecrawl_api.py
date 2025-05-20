@@ -24,8 +24,11 @@ from app.utils.logging_utils import (
 load_dotenv()
 
 # Firecrawl API configuration
-FIRECRAWL_API_KEY = os.getenv("FIRECRAWL_API_KEY", "")
+FIRECRAWL_API_KEY = "fc-48fd12dae3e2494abf33101d4b9474d0"  # Hardcoded for now to ensure it's correct
 FIRECRAWL_API_URL = "https://api.firecrawl.dev/v1"
+
+# Print the API key to verify it's loaded correctly (will be removed in production)
+print(f"Using Firecrawl API Key: {FIRECRAWL_API_KEY}")
 
 # Azure OpenAI model configuration
 AZURE_EMBEDDING_MODEL = "text-embedding-ada-002"
@@ -234,7 +237,7 @@ async def scrape_url(url: str, formats: List[str] = ["markdown"], force_refresh:
         for attempt in range(max_retries):
             start_time = time.time()
             try:
-                async with httpx.AsyncClient(timeout=60.0) as client:
+                async with httpx.AsyncClient(timeout=120.0) as client:  # Increased timeout to 120 seconds
                     response = await client.post(
                         f"{FIRECRAWL_API_URL}/scrape",
                         json=payload,
@@ -445,7 +448,7 @@ async def extract_structured_data(url: str, schema: Optional[Dict[str, Any]] = N
 
     try:
         # Make the API request
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=120.0) as client:  # Increased timeout to 120 seconds
             response = await client.post(
                 f"{FIRECRAWL_API_URL}/scrape",
                 json=payload,

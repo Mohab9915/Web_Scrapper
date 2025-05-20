@@ -64,11 +64,8 @@ async def execute_scrape(
     """
     return await scraping_service.execute_scrape(
         project_id,
-        request.current_page_url,
-        request.session_id,
-        request.api_keys,
-        background_tasks,
-        force_refresh=request.force_refresh
+        request,
+        background_tasks
     )
 
 @router.delete("/projects/{project_id}/sessions/{session_id}", status_code=status.HTTP_204_NO_CONTENT)
@@ -100,12 +97,12 @@ async def download_scraped_data(
     scraping_service: ScrapingService = Depends()
 ):
     """
-    Download scraped data in JSON or CSV format.
+    Download scraped data in JSON, CSV, or PDF format.
 
     Args:
         project_id (UUID): Project ID
         session_id (UUID): Session ID
-        format (str): Format ('json' or 'csv')
+        format (str): Format ('json', 'csv', or 'pdf')
 
     Returns:
         Response: File download response
@@ -113,7 +110,7 @@ async def download_scraped_data(
     Raises:
         HTTPException: If format is invalid or session not found
     """
-    if format not in ["json", "csv"]:
-        raise HTTPException(status_code=400, detail="Invalid format. Must be 'json' or 'csv'")
+    if format not in ["json", "csv", "pdf"]:
+        raise HTTPException(status_code=400, detail="Invalid format. Must be 'json', 'csv', or 'pdf'")
 
     return await scraping_service.get_download_file(project_id, session_id, format)

@@ -2,7 +2,7 @@
 Scrape session models for request/response validation.
 """
 from pydantic import BaseModel, Field, HttpUrl
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 from datetime import datetime
 from uuid import UUID
 
@@ -25,6 +25,10 @@ class ScrapedSessionResponse(ScrapedSessionBase):
     structured_data: Optional[Dict[str, Any]] = None
     download_link_json: Optional[str] = None
     download_link_csv: Optional[str] = None
+    display_format: Optional[str] = "table"  # Display format: 'table', 'paragraph', or 'raw'
+    tabular_data: Optional[List[Dict[str, Any]]] = None  # Structured data in tabular format
+    fields: Optional[List[str]] = None  # List of fields extracted
+    formatted_tabular_data: Optional[Dict[str, Any]] = None  # Data formatted according to display_format
 
     class Config:
         from_attributes = True
@@ -44,6 +48,8 @@ class ExecuteScrapeRequest(BaseModel):
     session_id: str
     api_keys: Optional[Dict[str, str]] = None  # Should contain 'api_key' and 'endpoint' for Azure OpenAI
     force_refresh: Optional[bool] = False  # Whether to bypass cache and fetch fresh content
+    display_format: Optional[str] = "table"  # Display format: 'table', 'paragraph', or 'raw'
+    conditions: Optional[str] = None  # Comma-separated list of fields to extract
 
 class ExecuteScrapeResponse(BaseModel):
     """Model for executing scraping response."""
@@ -52,3 +58,7 @@ class ExecuteScrapeResponse(BaseModel):
     download_links: Optional[Dict[str, str]] = None
     rag_status: Optional[str] = None
     embedding_cost_if_any: Optional[float] = None
+    tabular_data: Optional[List[Dict[str, Any]]] = None  # Structured data in tabular format
+    fields: Optional[List[str]] = None  # List of fields extracted
+    display_format: Optional[str] = "table"  # Display format used: 'table', 'paragraph', or 'raw'
+    formatted_data: Optional[Dict[str, Any]] = None  # Data formatted according to display_format

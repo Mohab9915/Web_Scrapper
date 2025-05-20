@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import projects, scraping, rag, websockets, cache
+from app.api import projects, scraping, rag, websockets, cache, project_urls, history
 from app.config import settings
 
 app = FastAPI(
@@ -29,6 +29,8 @@ app.include_router(scraping.router, prefix=settings.API_V1_STR)
 app.include_router(rag.router, prefix=settings.API_V1_STR)
 app.include_router(websockets.router, prefix=settings.API_V1_STR)
 app.include_router(cache.router, prefix=settings.API_V1_STR)
+app.include_router(project_urls.router, prefix=settings.API_V1_STR)
+app.include_router(history.router, prefix=settings.API_V1_STR)
 
 @app.get("/health")
 async def health_check():

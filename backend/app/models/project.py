@@ -18,6 +18,7 @@ class ProjectUpdate(BaseModel):
     """Model for updating a project."""
     name: Optional[str] = None
     rag_enabled: Optional[bool] = None
+    caching_enabled: Optional[bool] = None
 
 class ProjectResponse(ProjectBase):
     """Model for project response."""
@@ -25,6 +26,7 @@ class ProjectResponse(ProjectBase):
     created_at: datetime
     rag_status: str  # 'Enabled', 'Disabled', 'Enabling'
     scraped_sessions_count: int
+    caching_enabled: bool = True  # Default to True for backward compatibility
 
     class Config:
         from_attributes = True
