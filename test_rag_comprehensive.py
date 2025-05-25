@@ -41,8 +41,8 @@ DEFAULT_WAIT_INTERVAL = 3
 
 # Azure OpenAI credentials (already defined in test files)
 AZURE_OPENAI_CREDENTIALS = {
-    "api_key": "BuVHZw4d7OmEwH5QIsvw8gsKLyRxNUow4PT1gYg83iukV6JLRVL8JQQJ99BDACHYHv6XJ3w3AAAAACOGR8LC",
-    "endpoint": "https://practicehub3994533910.services.ai.azure.com"
+    "api_key": "YOUR_AZURE_API_KEY",
+    "endpoint": "https://your-azure-endpoint.services.ai.azure.com"
 }
 
 # Azure OpenAI model configuration

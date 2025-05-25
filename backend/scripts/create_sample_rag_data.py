@@ -118,8 +118,8 @@ Products have the following attributes:
             
             # Azure OpenAI credentials
             azure_credentials = {
-                'api_key': 'BuVHZw4d7OmEwH5QIsvw8gsKLyRxNUow4PT1gYg83iukV6JLRVL8JQQJ99BDACHYHv6XJ3w3AAAAACOGR8LC',
-                'endpoint': 'https://practicehub3994533910.services.ai.azure.com',
+                'api_key': 'YOUR_AZURE_API_KEY',
+                'endpoint': 'https://your-azure-endpoint.services.ai.azure.com',
                 'deployment_name': 'text-embedding-ada-002'
             }
             

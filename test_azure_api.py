@@ -5,8 +5,8 @@ import requests
 import json
 
 # Azure AI Studio configuration
-AZURE_API_KEY = "BuVHZw4d7OmEwH5QIsvw8gsKLyRxNUow4PT1gYg83iukV6JLRVL8JQQJ99BDACHYHv6XJ3w3AAAAACOGR8LC"
-AZURE_ENDPOINT = "https://practicehub3994533910.services.ai.azure.com"  # Remove /models
+AZURE_API_KEY = "YOUR_AZURE_API_KEY"
+AZURE_ENDPOINT = "https://your-azure-endpoint.services.ai.azure.com"  # Remove /models
 
 def test_embedding_api():
     """Test the embedding API."""

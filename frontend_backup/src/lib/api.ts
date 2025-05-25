@@ -36,7 +36,7 @@ export const API_URL = 'http://localhost:8000/api/v1';
 
 // Azure OpenAI credentials
 const AZURE_OPENAI_CREDENTIALS = {
-  api_key: 'BuVHZw4d7OmEwH5QIsvw8gsKLyRxNUow4PT1gYg83iukV6JLRVL8JQQJ99BDACHYHv6XJ3w3AAAAACOGR8LC',
+  api_key: 'YOUR_AZURE_API_KEY',
   endpoint: 'https://practicehub3994533910.services.ai.azure.com',
 };
 
