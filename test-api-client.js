@@ -12,9 +12,9 @@ const localStorage = {
 };
 
 // Set API keys
-localStorage.setItem('azureApiKey', 'BuVHZw4d7OmEwH5QIsvw8gsKLyRxNUow4PT1gYg83iukV6JLRVL8JQQJ99BDACHYHv6XJ3w3AAAAACOGR8LC');
-localStorage.setItem('azureEndpoint', 'https://practicehub3994533910.services.ai.azure.com');
-localStorage.setItem('openaiApiKey', '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');
+localStorage.setItem('azureApiKey', 'YOUR_AZURE_API_KEY');
+localStorage.setItem('azureEndpoint', 'https://your-azure-endpoint.services.ai.azure.com');
+localStorage.setItem('openaiApiKey', 'YOUR_OPENAI_API_KEY');
 
 // Mock getAzureOpenAICredentials function
 const getAzureOpenAICredentials = () => {
