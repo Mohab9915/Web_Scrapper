@@ -27,10 +27,29 @@ class ProjectUrlService:
             raise HTTPException(status_code=404, detail="Project not found")
 
         # Get URLs for the project
-        response = supabase.table("project_urls").select("*").eq("project_id", str(project_id)).execute()
+        urls_response = supabase.table("project_urls").select("*").eq("project_id", str(project_id)).execute()
 
-        # Convert to response model
-        return [ProjectUrlResponse(**url) for url in response.data]
+        project_urls_with_status = []
+        for url_data in urls_response.data:
+            # Find the latest scrape session for this URL and project
+            latest_session_response = supabase.table("scrape_sessions").select("status", "scraped_at")\
+                .eq("project_id", str(project_id))\
+                .eq("url", url_data["url"])\
+                .order("scraped_at", desc=True)\
+                .limit(1).execute()
+
+            status = "pending"
+            if latest_session_response.data:
+                status = latest_session_response.data[0]["status"]
+
+            # Combine url data with latest status
+            project_url_response_data = url_data.copy()
+            project_url_response_data["status"] = status
+
+            # Convert to response model
+            project_urls_with_status.append(ProjectUrlResponse(**project_url_response_data))
+
+        return project_urls_with_status
 
     async def create_project_url(self, project_url: ProjectUrlCreate) -> ProjectUrlResponse:
         """

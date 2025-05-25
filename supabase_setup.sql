@@ -77,3 +77,79 @@ END;
 
 $$;
 
+-- End of migration file: 01_initial_schema.sql
+
+-- Project URLs table
+CREATE TABLE IF NOT EXISTS project_urls (
+    id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    url TEXT NOT NULL,
+    conditions TEXT NOT NULL,
+    display_format TEXT NOT NULL DEFAULT 'table' CHECK (display_format IN ('table', 'paragraph', 'raw')),
+    created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    UNIQUE(project_id, url)
+);
+
+-- Add indexes for faster lookups
+CREATE INDEX IF NOT EXISTS project_urls_project_id_idx ON project_urls(project_id);
+
+CREATE INDEX IF NOT EXISTS project_urls_url_idx ON project_urls(url);
+
+-- Add RLS policies
+ALTER TABLE project_urls ENABLE ROW LEVEL SECURITY;
+
+-- Allow all operations for authenticated users
+CREATE POLICY project_urls_policy ON project_urls
+    USING (true)
+    WITH CHECK (true);
+
+-- End of migration file: 02_project_urls_table.sql
+
+-- Add formatted_tabular_data field to scrape_sessions table
+ALTER TABLE IF EXISTS scrape_sessions
+ADD COLUMN IF NOT EXISTS formatted_tabular_data JSONB;
+
+-- Add display_format field to scrape_sessions table
+ALTER TABLE IF EXISTS scrape_sessions
+ADD COLUMN IF NOT EXISTS display_format TEXT DEFAULT 'table';
+
+-- Add comment to explain the purpose of the formatted_tabular_data field
+COMMENT ON COLUMN scrape_sessions.formatted_tabular_data IS 'Stores the formatted tabular data for different display formats (table, paragraph, raw)';
+
+-- Add comment to explain the purpose of the display_format field
+COMMENT ON COLUMN scrape_sessions.display_format IS 'Stores the display format preference for this session (table, paragraph, raw)';
+
+-- End of migration file: 03_add_formatted_tabular_data.sql
+
+-- Add caching_enabled field to projects table
+ALTER TABLE IF EXISTS projects
+ADD COLUMN IF NOT EXISTS caching_enabled BOOLEAN NOT NULL DEFAULT TRUE;
+
+-- Add comment to explain the purpose of the caching_enabled field
+COMMENT ON COLUMN projects.caching_enabled IS 'Controls whether web scraping should use cached content or always fetch fresh content';
+
+-- End of migration file: 04_add_caching_enabled.sql
+
+ALTER TABLE project_urls ADD COLUMN rag_enabled BOOLEAN DEFAULT FALSE;
+
+-- End of migration file: 05_add_rag_enabled_to_project_urls.sql
+
+-- Create project_urls table
+CREATE TABLE IF NOT EXISTS project_urls (
+    id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+    project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
+    url TEXT NOT NULL,
+    conditions TEXT,
+    display_format TEXT DEFAULT 'table',
+    created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+    UNIQUE(project_id, url)
+);
+
+-- Add index for faster lookups
+CREATE INDEX IF NOT EXISTS project_urls_project_id_idx ON project_urls(project_id);
+
+CREATE INDEX IF NOT EXISTS project_urls_url_idx ON project_urls(url);
+
+-- End of migration file: create_project_urls_table.sql;
+

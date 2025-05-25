@@ -72,6 +72,26 @@ async def update_project(project_id: UUID, project_update: ProjectUpdate, projec
         raise HTTPException(status_code=404, detail="Project not found")
     return updated_project
 
+@router.patch("/{project_id}", response_model=ProjectResponse)
+async def patch_project(project_id: UUID, project_update: ProjectUpdate, project_service: ProjectService = Depends()):
+    """
+    Partially update a project.
+    
+    Args:
+        project_id (UUID): Project ID
+        project_update (ProjectUpdate): Project update data
+        
+    Returns:
+        ProjectResponse: Updated project
+        
+    Raises:
+        HTTPException: If project not found
+    """
+    updated_project = await project_service.update_project(project_id, project_update)
+    if not updated_project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return updated_project
+
 @router.delete("/{project_id}", status_code=status.HTTP_204_NO_CONTENT)
 async def delete_project(project_id: UUID, project_service: ProjectService = Depends()):
     """
@@ -87,3 +107,23 @@ async def delete_project(project_id: UUID, project_service: ProjectService = Dep
     if not success:
         raise HTTPException(status_code=404, detail="Project not found")
     return None
+
+@router.post("/{project_id}/enable-rag", response_model=ProjectResponse)
+async def enable_rag(project_id: UUID, project_service: ProjectService = Depends()):
+    """
+    Enable RAG for a project.
+    
+    Args:
+        project_id (UUID): Project ID
+        
+    Returns:
+        ProjectResponse: Updated project
+        
+    Raises:
+        HTTPException: If project not found
+    """
+    project_update = ProjectUpdate(rag_enabled=True)
+    updated_project = await project_service.update_project(project_id, project_update)
+    if not updated_project:
+        raise HTTPException(status_code=404, detail="Project not found")
+    return updated_project

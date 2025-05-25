@@ -13,7 +13,7 @@ from app.database import supabase
 from app.models.scrape_session import ScrapedSessionResponse, InteractiveScrapingResponse, ExecuteScrapeResponse, ExecuteScrapeRequest
 from app.utils.browser_control import launch_browser_session
 from app.utils.text_processing import structure_scraped_data, format_data_for_display
-from app.utils.firecrawl_api import scrape_url, AZURE_EMBEDDING_MODEL, AZURE_CHAT_MODEL
+from app.utils.crawl4ai_crawler import scrape_url, extract_structured_data, AZURE_EMBEDDING_MODEL, AZURE_CHAT_MODEL
 from app.services.rag_service import RAGService
 
 class ScrapingService:
@@ -107,7 +107,7 @@ class ScrapingService:
         rag_enabled: bool = False
     ) -> ExecuteScrapeResponse:
         """
-        Execute scraping on a specific URL using Firecrawl API.
+        Execute scraping on a specific URL using Crawl4AI framework.
 
         Args:
             project_id (UUID): Project ID
@@ -147,12 +147,16 @@ class ScrapingService:
             # - If force_refresh is True in the request, bypass cache
             use_force_refresh = force_refresh or not caching_enabled
 
-            # Use Firecrawl API to scrape the page with caching
-            scrape_result = await scrape_url(
-                current_page_url,
-                formats=["markdown", "html"],
-                force_refresh=use_force_refresh
-            )
+            # Use Crawl4AI framework to scrape the page with caching
+            try:
+                scrape_result = await scrape_url(
+                    current_page_url,
+                    formats=["markdown", "html"],
+                    force_refresh=use_force_refresh
+                )
+            except Exception as e:
+                print(f"Error scraping URL with crawl4ai: {e}")
+                raise HTTPException(status_code=500, detail=f"Failed to scrape URL: {str(e)}")
 
             # Extract markdown content from the result
             markdown_content = scrape_result.get("markdown", "")
@@ -207,11 +211,18 @@ class ScrapingService:
                 print(f"Using default conditions due to error: {conditions}")
 
         # Structure the scraped data with conditions and Azure credentials
-        structured_data = await structure_scraped_data(
-            markdown_content,
-            conditions,
-            api_keys if api_keys else None
-        )
+        try:
+            structured_data = await structure_scraped_data(
+                markdown_content,
+                conditions,
+                api_keys if api_keys else None
+            )
+        except Exception as e:
+            print(f"Error structuring scraped data: {e}")
+            # Create a basic structured data object if structuring fails
+            structured_data = {
+                "tabular_data": [{"content": markdown_content}]
+            }
 
         # Create a new scrape session
         # Ensure session_id is a valid UUID
@@ -329,7 +340,7 @@ class ScrapingService:
 
         return ExecuteScrapeResponse(
             status="success",
-            message=f"Page {current_page_url} scraped successfully using Firecrawl API.",
+            message=f"Page {current_page_url} scraped successfully using Crawl4AI framework.",
             download_links=download_links,
             rag_status=session_status,
             embedding_cost_if_any=embedding_cost,

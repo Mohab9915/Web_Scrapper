@@ -104,6 +104,7 @@ function WebScrapingDashboard() {
 
   const aiModels = [
     { id: 'gpt-4o-mini', name: 'GPT-4o Mini', description: 'Faster, more efficient version' },
+    { id: 'gpt-4o', name: 'GPT-4o', description: 'OpenAI\'s powerful multimodal model' },
     { id: 'gemini/gemini-2.0-flash', name: 'gemini/gemini-2.0-flash', description: 'Google\'s multimodal AI model' }
   ];
 
@@ -429,22 +430,45 @@ function WebScrapingDashboard() {
 
   const handleSendMessage = async (userMessage, modelName, addSystemResponseCallback) => {
     try {
+      console.log('Using model:', modelName); // Log the model name being used
+      
       if (activeProject && activeProject.ragStatus === 'enabled') {
-        // If RAG is enabled, call the RAG API
+        // Get stored OpenAI API key if needed
+        const openaiApiKey = localStorage.getItem('openaiApiKey') || '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';
+        
+        // Prepare the request body based on the model
+        let requestBody;
+        
+        // Handle all variations of GPT-4o name to always use OpenAI API
+        if (modelName === 'gpt-4o' || modelName === 'GPT-4o' || modelName.toLowerCase().includes('gpt-4o')) {
+          console.log('Using OpenAI API for GPT-4o');
+          requestBody = {
+            query: userMessage,
+            model_name: 'gpt-4o',  // Force the model name to be gpt-4o
+            use_openai: true,
+            openai_key: openaiApiKey
+          };
+        } else {
+          // Use Azure for other models
+          console.log('Using Azure API for', modelName);
+          requestBody = {
+            query: userMessage,
+            model_name: modelName,
+            azure_credentials: {
+              api_key: 'BuVHZw4d7OmEwH5QIsvw8gsKLyRxNUow4PT1gYg83iukV6JLRVL8JQQJ99BDACHYHv6XJ3w3AAAAACOGR8LC',
+              endpoint: 'https://practicehub3994533910.services.ai.azure.com',
+              deployment_name: modelName
+            }
+          };
+        }
+        
+        // Call the RAG API
         const response = await fetch(`http://localhost:8000/api/v1/projects/${activeProjectId}/query-rag`, {
           method: 'POST',
           headers: {
             'Content-Type': 'application/json',
           },
-          body: JSON.stringify({
-            query: userMessage,
-            model_deployment: modelName,
-            azure_credentials: {
-              api_key: 'BuVHZw4d7OmEwH5QIsvw8gsKLyRxNUow4PT1gYg83iukV6JLRVL8JQQJ99BDACHYHv6XJ3w3AAAAACOGR8LC',
-              endpoint: 'https://practicehub3994533910.services.ai.azure.com',
-              deployment_name: 'gpt-4o-mini'
-            }
-          }),
+          body: JSON.stringify(requestBody),
         });
 
         if (!response.ok) {
@@ -1092,7 +1116,7 @@ function WebScrapingDashboard() {
            <ChatPanel
              key={currentActiveProject.id + '-chat'}
              isRagMode={currentActiveProject.ragStatus === 'enabled'}
-             selectedModelName={getSelectedModelName()}
+             selectedModelName={selectedAiModel}
              onSendMessage={handleSendMessage}
              projectName={currentActiveProject.name}
             />

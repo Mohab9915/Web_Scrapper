@@ -108,9 +108,27 @@ class ProjectService:
             if project_update.rag_enabled:
                 # This would be handled by a background task in a real implementation
                 # For now, we'll just update the status of existing sessions
-                supabase.table("scrape_sessions").update({
-                    "status": "rag_ingested"
-                }).eq("project_id", str(project_id)).execute()
+                try:
+                    # Get all scrape sessions for the project
+                    sessions_response = supabase.table("scrape_sessions").select("id").eq("project_id", str(project_id)).execute()
+                    sessions = sessions_response.data
+                    
+                    if sessions:
+                        print(f"Found {len(sessions)} scrape sessions for project {project_id}")
+                        
+                        # Update each session individually to ensure they're all updated
+                        for session in sessions:
+                            session_id = session["id"]
+                            supabase.table("scrape_sessions").update({
+                                "status": "rag_ingested",
+                                # Add a unique identifier for RAG processing
+                                "unique_scrape_identifier": f"session_{session_id}"
+                            }).eq("id", session_id).execute()
+                            print(f"Updated session {session_id} to status 'rag_ingested'")
+                    else:
+                        print(f"No scrape sessions found for project {project_id}")
+                except Exception as e:
+                    print(f"Error updating scrape sessions: {str(e)}")
 
         if project_update.caching_enabled is not None:
             update_data["caching_enabled"] = project_update.caching_enabled

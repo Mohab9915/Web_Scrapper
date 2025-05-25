@@ -26,10 +26,12 @@ class ChatMessageResponse(ChatMessageBase):
         from_attributes = True
 
 class RAGQueryRequest(BaseModel):
-    """Model for RAG query request using Azure OpenAI."""
+    """Model for RAG query request using Azure OpenAI or regular OpenAI."""
     query: str
-    model_deployment: str = "gpt-35-turbo"  # Default to GPT-3.5 Turbo deployment
-    azure_credentials: Dict[str, str]  # Must contain 'api_key' and 'endpoint'
+    model_name: Optional[str] = None  # Optional model name for Azure deployments or OpenAI models
+    azure_credentials: Optional[Dict[str, str]] = None  # Must contain 'api_key' and 'endpoint' for Azure
+    openai_key: Optional[str] = None  # OpenAI API key for using OpenAI models
+    use_openai: Optional[bool] = False  # Whether to use OpenAI instead of Azure
 
 class RAGQueryResponse(BaseModel):
     """Model for RAG query response."""

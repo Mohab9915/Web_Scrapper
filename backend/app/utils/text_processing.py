@@ -7,7 +7,7 @@ import httpx
 from typing import List, Dict, Any, Optional
 import tiktoken
 
-from app.utils.firecrawl_api import AZURE_CHAT_MODEL
+from app.utils.crawl4ai_crawler import AZURE_CHAT_MODEL
 
 async def structure_scraped_data(
     markdown_content: str,

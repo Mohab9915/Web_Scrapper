@@ -30,8 +30,10 @@ class ScrapedSessionResponse(ScrapedSessionBase):
     fields: Optional[List[str]] = None  # List of fields extracted
     formatted_tabular_data: Optional[Dict[str, Any]] = None  # Data formatted according to display_format
 
+
     class Config:
         from_attributes = True
+
 
 class InteractiveScrapingInitiate(BaseModel):
     """Model for initiating interactive scraping."""

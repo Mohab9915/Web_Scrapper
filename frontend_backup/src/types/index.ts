@@ -17,6 +17,10 @@ export interface ScrapedSession {
   markdownContent?: string; // Raw markdown from scraping
   downloadLinkJson?: string; // Mock link
   downloadLinkCsv?: string; // Mock link
+  tabularData?: Record<string, any>[]; // Structured data in tabular format
+  fields?: string[]; // List of fields extracted
+  displayFormat?: string; // Display format: 'table', 'paragraph', or 'raw'
+  formattedTabularData?: Record<string, any>; // Data formatted according to display_format
 }
 
 export interface ChatMessage {

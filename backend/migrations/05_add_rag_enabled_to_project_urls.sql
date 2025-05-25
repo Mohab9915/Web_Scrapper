@@ -1,0 +1,1 @@
+ALTER TABLE project_urls ADD COLUMN rag_enabled BOOLEAN DEFAULT FALSE;

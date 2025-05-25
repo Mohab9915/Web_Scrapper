@@ -31,6 +31,16 @@ class Settings(BaseSettings):
 
     # Firecrawl API settings
     FIRECRAWL_API_KEY: str = os.getenv("FIRECRAWL_API_KEY", "")
+    
+    # Azure OpenAI settings
+    AZURE_OPENAI_ENDPOINT: str = os.getenv("AZURE_OPENAI_ENDPOINT", "")
+    AZURE_OPENAI_API_KEY: str = os.getenv("AZURE_OPENAI_API_KEY", "")
+    AZURE_OPENAI_API_VERSION: str = os.getenv("AZURE_OPENAI_API_VERSION", "")
+    AZURE_OPENAI_MODEL: str = os.getenv("AZURE_OPENAI_MODEL", "")
+    
+    # OpenAI settings
+    OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")
+    OPENAI_MODELS: str = os.getenv("OPENAI_MODELS", "[]")
 
     class Config:
         env_file = ".env"

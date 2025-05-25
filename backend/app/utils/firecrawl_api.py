@@ -32,7 +32,7 @@ print(f"Using Firecrawl API Key: {FIRECRAWL_API_KEY}")
 
 # Azure OpenAI model configuration
 AZURE_EMBEDDING_MODEL = "text-embedding-ada-002"
-AZURE_CHAT_MODEL = "gpt-4o-mini"
+AZURE_CHAT_MODEL = "gpt-4o-mini"  # Default, can be overridden by deployment_name in requests
 
 # Cache statistics
 CACHE_STATS = {
