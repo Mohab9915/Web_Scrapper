@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>Test LocalStorage</title>
+</head>
+<body>
+    <h1>Test LocalStorage for API Keys</h1>
+    <script>
+        // Set the Azure API key and endpoint in localStorage
+        localStorage.setItem('azureApiKey', 'BuVHZw4d7OmEwH5QIsvw8gsKLyRxNUow4PT1gYg83iukV6JLRVL8JQQJ99BDACHYHv6XJ3w3AAAAACOGR8LC');
+        localStorage.setItem('azureEndpoint', 'https://practicehub3994533910.services.ai.azure.com');
+        
+        // Set the OpenAI API key
+        localStorage.setItem('openaiApiKey', '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');
+        
+        // Display the values
+        document.write('<p>Azure API Key: ' + localStorage.getItem('azureApiKey') + '</p>');
+        document.write('<p>Azure Endpoint: ' + localStorage.getItem('azureEndpoint') + '</p>');
+        document.write('<p>OpenAI API Key: ' + localStorage.getItem('openaiApiKey') + '</p>');
+        
+        document.write('<p>Keys have been set in localStorage. You can now close this page and test the application.</p>');
+    </script>
+</body>
+</html>

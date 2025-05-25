@@ -31,6 +31,20 @@ function ApiKeyInstructionsModal({ provider, onClose }) {
         </ol>
       </>
     );
+  } else if (provider === 'Azure OpenAI') {
+    content = (
+      <>
+        <p className="mb-2">To get your Azure OpenAI credentials:</p>
+        <ol className="list-decimal list-inside text-sm space-y-1">
+          <li>Go to the <a href="https://portal.azure.com/" target="_blank" rel="noopener noreferrer" className="text-indigo-400 hover:underline">Azure Portal</a>.</li>
+          <li>Navigate to your Azure OpenAI resource.</li>
+          <li>In the left menu, select "Keys and Endpoint" under "Resource Management".</li>
+          <li>Copy one of the keys (KEY 1 or KEY 2) for the API Key field.</li>
+          <li>Copy the Endpoint URL for the Endpoint field.</li>
+          <li><strong>Important:</strong> Keep your API key confidential.</li>
+        </ol>
+      </>
+    );
   }
 
   return (
@@ -56,8 +70,11 @@ function ApiKeyInstructionsModal({ provider, onClose }) {
 function SettingsModal({ isOpen, onClose }) {
   const [openaiApiKey, setOpenaiApiKey] = useState('');
   const [geminiApiKey, setGeminiApiKey] = useState('');
+  const [azureApiKey, setAzureApiKey] = useState('');
+  const [azureEndpoint, setAzureEndpoint] = useState('');
   const [showOpenaiKey, setShowOpenaiKey] = useState(false);
   const [showGeminiKey, setShowGeminiKey] = useState(false);
+  const [showAzureKey, setShowAzureKey] = useState(false);
   const [defaultExportFormat, setDefaultExportFormat] = useState('json');
   const [cachingEnabled, setCachingEnabled] = useState(true);
   const [instructionProvider, setInstructionProvider] = useState(null);
@@ -66,6 +83,8 @@ function SettingsModal({ isOpen, onClose }) {
     if (isOpen) {
       setOpenaiApiKey(localStorage.getItem('openaiApiKey') || '');
       setGeminiApiKey(localStorage.getItem('geminiApiKey') || '');
+      setAzureApiKey(localStorage.getItem('azureApiKey') || '');
+      setAzureEndpoint(localStorage.getItem('azureEndpoint') || '');
       setDefaultExportFormat(localStorage.getItem('defaultExportFormat') || 'json');
       setCachingEnabled(localStorage.getItem('cachingEnabled') !== 'false'); // Default to true if not set
     }
@@ -74,6 +93,8 @@ function SettingsModal({ isOpen, onClose }) {
   const handleSaveSettings = () => {
     localStorage.setItem('openaiApiKey', openaiApiKey);
     localStorage.setItem('geminiApiKey', geminiApiKey);
+    localStorage.setItem('azureApiKey', azureApiKey);
+    localStorage.setItem('azureEndpoint', azureEndpoint);
     localStorage.setItem('defaultExportFormat', defaultExportFormat);
     localStorage.setItem('cachingEnabled', cachingEnabled.toString());
     alert('Settings saved!');
@@ -162,7 +183,56 @@ function SettingsModal({ isOpen, onClose }) {
                     <Info size={12} className="mr-1" /> How to get this key?
                   </button>
                 </div>
-                <p className="text-xs text-purple-400">
+
+                <div className="mt-4 border-t border-purple-700 pt-4">
+                  <h4 className="text-sm font-medium text-purple-300 mb-3">Azure OpenAI Credentials</h4>
+                  
+                  <div className="mb-3">
+                    <label htmlFor="azure-api-key" className="block text-sm font-medium text-purple-300 mb-1">
+                      Azure OpenAI API Key
+                    </label>
+                    <div className="flex items-center space-x-2">
+                      <input
+                        id="azure-api-key"
+                        type={showAzureKey ? 'text' : 'password'}
+                        value={azureApiKey}
+                        onChange={(e) => setAzureApiKey(e.target.value)}
+                        placeholder="Enter your Azure OpenAI API key"
+                        className="flex-grow p-2 rounded-md bg-purple-700 border border-purple-600 text-white placeholder-purple-400 focus:outline-none focus:ring-2 focus:ring-purple-400"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => setShowAzureKey(!showAzureKey)}
+                        className="p-2 text-purple-300 hover:text-purple-100"
+                        title={showAzureKey ? "Hide Key" : "Show Key"}
+                      >
+                        {showAzureKey ? <EyeOff size={18} /> : <Eye size={18} />}
+                      </button>
+                    </div>
+                  </div>
+                  
+                  <div>
+                    <label htmlFor="azure-endpoint" className="block text-sm font-medium text-purple-300 mb-1">
+                      Azure OpenAI Endpoint
+                    </label>
+                    <input
+                      id="azure-endpoint"
+                      type="text"
+                      value={azureEndpoint}
+                      onChange={(e) => setAzureEndpoint(e.target.value)}
+                      placeholder="https://your-resource.openai.azure.com"
+                      className="w-full p-2 rounded-md bg-purple-700 border border-purple-600 text-white placeholder-purple-400 focus:outline-none focus:ring-2 focus:ring-purple-400"
+                    />
+                  </div>
+                  <button
+                    onClick={() => setInstructionProvider('Azure OpenAI')}
+                    className="mt-1 text-xs text-indigo-400 hover:underline flex items-center"
+                  >
+                    <Info size={12} className="mr-1" /> How to get these credentials?
+                  </button>
+                </div>
+                
+                <p className="text-xs text-purple-400 mt-4">
                   API keys are stored locally in your browser's localStorage.
                 </p>
               </div>

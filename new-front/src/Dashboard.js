@@ -8,6 +8,7 @@ import SettingsModal from './SettingsModal';
 import ProjectsPanel from './ProjectsPanel';
 import RagPromptModal from './RagPromptModal';
 import ConfirmationModal from './ConfirmationModal';
+import { executeScrape, queryRagApi } from './lib/api';
 
 function WebScrapingDashboard() {
   const [projects, setProjects] = useState([]);
@@ -433,49 +434,8 @@ function WebScrapingDashboard() {
       console.log('Using model:', modelName); // Log the model name being used
       
       if (activeProject && activeProject.ragStatus === 'enabled') {
-        // Get stored OpenAI API key if needed
-        const openaiApiKey = localStorage.getItem('openaiApiKey') || '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';
-        
-        // Prepare the request body based on the model
-        let requestBody;
-        
-        // Handle all variations of GPT-4o name to always use OpenAI API
-        if (modelName === 'gpt-4o' || modelName === 'GPT-4o' || modelName.toLowerCase().includes('gpt-4o')) {
-          console.log('Using OpenAI API for GPT-4o');
-          requestBody = {
-            query: userMessage,
-            model_name: 'gpt-4o',  // Force the model name to be gpt-4o
-            use_openai: true,
-            openai_key: openaiApiKey
-          };
-        } else {
-          // Use Azure for other models
-          console.log('Using Azure API for', modelName);
-          requestBody = {
-            query: userMessage,
-            model_name: modelName,
-            azure_credentials: {
-              api_key: 'BuVHZw4d7OmEwH5QIsvw8gsKLyRxNUow4PT1gYg83iukV6JLRVL8JQQJ99BDACHYHv6XJ3w3AAAAACOGR8LC',
-              endpoint: 'https://practicehub3994533910.services.ai.azure.com',
-              deployment_name: modelName
-            }
-          };
-        }
-        
-        // Call the RAG API
-        const response = await fetch(`http://localhost:8000/api/v1/projects/${activeProjectId}/query-rag`, {
-          method: 'POST',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify(requestBody),
-        });
-
-        if (!response.ok) {
-          throw new Error('Failed to query RAG system');
-        }
-
-        const result = await response.json();
+        // Use our API client to query the RAG API
+        const result = await queryRagApi(activeProjectId, userMessage, modelName);
         addSystemResponseCallback(result.answer);
       } else {
         // If RAG is not enabled, return an error message
@@ -803,32 +763,16 @@ function WebScrapingDashboard() {
 
       const sessionId = generateUUID();
 
-      // Call the real API
-      const response = await fetch(`http://localhost:8000/api/v1/projects/${activeProjectId}/execute-scrape`, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          current_page_url: url,
-          session_id: sessionId,
-          force_refresh: !cachingEnabled, // Use caching preference - force refresh if caching is disabled
-          display_format: displayFormat,
-          conditions: conditions, // Pass the conditions to the backend
-          api_keys: {
-            api_key: 'BuVHZw4d7OmEwH5QIsvw8gsKLyRxNUow4PT1gYg83iukV6JLRVL8JQQJ99BDACHYHv6XJ3w3AAAAACOGR8LC',
-            endpoint: 'https://practicehub3994533910.services.ai.azure.com',
-            deployment_name: 'text-embedding-ada-002'
-          }
-        }),
-      });
-
-      if (!response.ok) {
-        const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
-        throw new Error(errorData.detail || 'Failed to scrape URL');
-      }
-
-      const result = await response.json();
+      // Call the API client to execute the scrape
+      const result = await executeScrape(
+        activeProjectId,
+        url,
+        sessionId,
+        !cachingEnabled, // forceRefresh if caching is disabled
+        displayFormat,
+        conditions
+      );
+      
       console.log('Scraping result:', result);
 
       // Update URLs to "completed" status

@@ -34,10 +34,21 @@ function transformKeys(data) {
 // Backend API URL
 export const API_URL = 'http://localhost:8000/api/v1';
 
-// Azure OpenAI credentials
-const AZURE_OPENAI_CREDENTIALS = {
-  api_key: 'BuVHZw4d7OmEwH5QIsvw8gsKLyRxNUow4PT1gYg83iukV6JLRVL8JQQJ99BDACHYHv6XJ3w3AAAAACOGR8LC',
-  endpoint: 'https://practicehub3994533910.services.ai.azure.com',
+// Get Azure OpenAI credentials from localStorage or use empty values
+const getAzureOpenAICredentials = () => {
+  // Try to get the API key from localStorage
+  const apiKey = localStorage.getItem('azureApiKey') || '';
+  const endpoint = localStorage.getItem('azureEndpoint') || '';
+  
+  return {
+    api_key: apiKey,
+    endpoint: endpoint,
+  };
+};
+
+// Get OpenAI API key from localStorage or use empty value
+const getOpenAIApiKey = () => {
+  return localStorage.getItem('openaiApiKey') || '';
 };
 
 // Azure OpenAI model configuration
@@ -202,7 +213,7 @@ export async function initiateInteractiveScrape(projectId, url) {
 /**
  * Execute scraping on a URL
  */
-export async function executeScrape(projectId, url, sessionId, forceRefresh = false) {
+export async function executeScrape(projectId, url, sessionId, forceRefresh = false, displayFormat = 'table', conditions = '') {
   // Generate a random session ID if not provided
   const finalSessionId = sessionId || (
     typeof crypto !== 'undefined' && crypto.randomUUID
@@ -210,6 +221,9 @@ export async function executeScrape(projectId, url, sessionId, forceRefresh = fa
       : `session_${Date.now()}_${Math.random().toString(36).substring(2, 9)}`
   );
 
+  // Get the latest Azure OpenAI credentials
+  const credentials = getAzureOpenAICredentials();
+  
   // Include Azure OpenAI credentials for embedding generation
   return fetchWithErrorHandling(
     `${API_URL}/projects/${projectId}/execute-scrape`,
@@ -220,8 +234,10 @@ export async function executeScrape(projectId, url, sessionId, forceRefresh = fa
         current_page_url: url,
         session_id: finalSessionId,
         force_refresh: forceRefresh, // Add force_refresh parameter
+        display_format: displayFormat,
+        conditions: conditions, // Pass the conditions to the backend
         api_keys: {
-          ...AZURE_OPENAI_CREDENTIALS,
+          ...credentials,
           deployment_name: AZURE_EMBEDDING_MODEL
         }
       }),
@@ -246,4 +262,49 @@ export async function deleteScrapedSession(projectId, sessionId) {
  */
 export async function fetchCacheStats() {
   return fetchWithErrorHandling(`${API_URL}/cache/stats`);
+}
+
+/**
+ * Query the RAG API with the appropriate credentials
+ */
+export async function queryRagApi(projectId, userMessage, modelName) {
+  // Determine which API to use based on the model name
+  // Only match exact gpt-4o, not gpt-4o-mini or other variants
+  const isGpt4o = modelName === 'gpt-4o' || 
+                  modelName === 'GPT-4o' || 
+                  modelName.toLowerCase() === 'gpt-4o';
+  
+  let requestBody;
+  
+  if (isGpt4o) {
+    // Use OpenAI API for GPT-4o
+    const openaiApiKey = getOpenAIApiKey();
+    requestBody = {
+      query: userMessage,
+      model_name: 'gpt-4o',  // Force the model name to be gpt-4o
+      use_openai: true,
+      openai_key: openaiApiKey
+    };
+  } else {
+    // Use Azure for other models
+    const azureCredentials = getAzureOpenAICredentials();
+    requestBody = {
+      query: userMessage,
+      model_name: modelName,
+      azure_credentials: {
+        api_key: azureCredentials.api_key,
+        endpoint: azureCredentials.endpoint,
+        deployment_name: modelName
+      }
+    };
+  }
+  
+  return fetchWithErrorHandling(
+    `${API_URL}/projects/${projectId}/query-rag`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+    }
+  );
 }
