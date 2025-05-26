@@ -286,7 +286,8 @@ class ScrapingService:
                 project_id,
                 session["id"],
                 markdown_content,
-                embedding_api_keys
+                embedding_api_keys,
+                structured_data  # Pass structured data for focused RAG ingestion
             )
             session_status = "Processing for RAG"
 

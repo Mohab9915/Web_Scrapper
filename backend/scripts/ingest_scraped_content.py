@@ -5,8 +5,10 @@ This script processes the raw_markdown content from scrape_sessions and creates 
 import asyncio
 import sys
 import os
+import json
 from uuid import UUID
 import httpx
+from dotenv import load_dotenv
 
 # Add the parent directory to the path so we can import from app
 sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
@@ -23,6 +25,8 @@ async def ingest_scraped_content_for_project(project_id: str):
         project_id (str): Project ID
     """
     try:
+        print(f"Starting RAG ingestion for project {project_id}")
+        
         # Check if project exists
         project_response = supabase.table("projects").select("*").eq("id", project_id).single().execute()
         if not project_response.data:
@@ -48,12 +52,24 @@ async def ingest_scraped_content_for_project(project_id: str):
 
         print(f"Found {len(sessions_response.data)} scrape sessions")
 
-        # Azure OpenAI credentials
+        # Azure OpenAI credentials - get from environment variables
+        import os
+        from dotenv import load_dotenv
+        
+        # Load environment variables
+        load_dotenv()
+        
         azure_credentials = {
-            'api_key': 'YOUR_AZURE_API_KEY',
-            'endpoint': 'https://your-azure-endpoint.services.ai.azure.com',
-            'deployment_name': 'text-embedding-ada-002'
+            'api_key': os.getenv('AZURE_OPENAI_API_KEY'),
+            'endpoint': os.getenv('AZURE_OPENAI_ENDPOINT'),
+            'deployment_name': os.getenv('AZURE_EMBEDDING_MODEL', 'text-embedding-ada-002')
         }
+        
+        # Check if credentials are available
+        if not azure_credentials['api_key'] or not azure_credentials['endpoint']:
+            print("Warning: Azure OpenAI credentials not found in environment variables")
+            print("Make sure AZURE_OPENAI_API_KEY and AZURE_OPENAI_ENDPOINT are set")
+            azure_credentials = None
 
         # Process each session
         for session in sessions_response.data:
@@ -75,52 +91,33 @@ async def ingest_scraped_content_for_project(project_id: str):
             markdown_content = session['raw_markdown']
             print(f"Found raw_markdown content ({len(markdown_content)} characters)")
 
-            # Check if markdown already exists for this session
-            markdown_response = supabase.table("markdowns").select("*").eq("unique_name", unique_scrape_identifier).execute()
-            if markdown_response.data:
-                print(f"Markdown already exists for session {session_id}, deleting existing entries")
-                supabase.table("markdowns").delete().eq("unique_name", unique_scrape_identifier).execute()
+            # Check for structured data to use instead of full markdown
+            structured_data = None
+            if session.get('structured_data_json'):
+                try:
+                    import json
+                    structured_data = json.loads(session['structured_data_json'])
+                    print(f"Found structured data, will use it for RAG ingestion instead of full markdown")
+                except Exception as e:
+                    print(f"Error parsing structured_data_json: {e}")
+                    structured_data = None
 
-            # Check if embeddings already exist for this session
-            embeddings_response = supabase.table("embeddings").select("*").eq("unique_name", unique_scrape_identifier).execute()
-            if embeddings_response.data:
-                print(f"Embeddings already exist for session {session_id}, deleting existing entries")
-                supabase.table("embeddings").delete().eq("unique_name", unique_scrape_identifier).execute()
-
-            # Insert into markdowns table
-            print(f"Inserting markdown content into markdowns table")
-            markdown_response = supabase.table("markdowns").insert({
-                "unique_name": unique_scrape_identifier,
-                "url": url,
-                "markdown": markdown_content
-            }).execute()
-
-            if not markdown_response.data:
-                print(f"Failed to insert markdown content for session {session_id}")
+            # Use RAG service for ingestion
+            from app.services.rag_service import RAGService
+            rag_service = RAGService()
+            
+            try:
+                await rag_service.ingest_scraped_content(
+                    project_id=UUID(project_id),
+                    session_id=UUID(session_id),
+                    markdown_content=markdown_content,
+                    azure_credentials=azure_credentials,
+                    structured_data=structured_data
+                )
+                print(f"Content ingested successfully via RAG service for session {session_id}")
+            except Exception as e:
+                print(f"Failed to ingest content via RAG service for session {session_id}: {e}")
                 continue
-
-            print(f"Markdown content inserted successfully")
-
-            # Chunk the markdown content
-            chunks = await chunk_text(markdown_content)
-            print(f"Created {len(chunks)} chunks")
-
-            # Generate embeddings for each chunk
-            for i, chunk in enumerate(chunks):
-                print(f"Generating embedding for chunk {i+1}/{len(chunks)}")
-                embedding = await generate_embeddings(chunk, azure_credentials)
-
-                # Insert into embeddings table
-                supabase.table("embeddings").insert({
-                    "unique_name": unique_scrape_identifier,
-                    "chunk_id": i,
-                    "content": chunk,
-                    "embedding": embedding
-                }).execute()
-
-                print(f"Embedding {i+1} inserted successfully")
-
-            print(f"All embeddings inserted successfully for session {session_id}")
 
             # Update session status
             supabase.table("scrape_sessions").update({
@@ -133,6 +130,8 @@ async def ingest_scraped_content_for_project(project_id: str):
 
     except Exception as e:
         print(f"Error: {e}")
+        import traceback
+        traceback.print_exc()
 
 if __name__ == "__main__":
     if len(sys.argv) != 2:

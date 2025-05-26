@@ -303,16 +303,19 @@ class RAGService:
         project_id: UUID,
         session_id: UUID,
         markdown_content: str,
-        azure_credentials: Optional[Dict[str, str]]
+        azure_credentials: Optional[Dict[str, str]],
+        structured_data: Optional[Dict[str, Any]] = None
     ) -> bool:
         """
         Ingest scraped content into the RAG system using Azure OpenAI for embeddings.
+        If structured_data is provided, it will be used instead of the full markdown content.
 
         Args:
             project_id (UUID): Project ID
             session_id (UUID): Session ID
-            markdown_content (str): Markdown content
+            markdown_content (str): Markdown content (used as fallback)
             azure_credentials (Optional[Dict[str, str]]): Dictionary containing 'api_key', 'endpoint', and optional 'deployment_name'
+            structured_data (Optional[Dict[str, Any]]): Structured data containing tabular_data to ingest instead of full markdown
 
         Returns:
             bool: True if successful, False otherwise
@@ -353,11 +356,40 @@ class RAGService:
             unique_scrape_identifier = session["unique_scrape_identifier"]
             url = session["url"]
 
-            # Insert into markdowns table
+            # Determine content to ingest: structured data or full markdown
+            content_to_ingest = markdown_content
+            if structured_data and "tabular_data" in structured_data:
+                # Convert structured data to text format for RAG ingestion
+                content_to_ingest = self._convert_structured_data_to_text(structured_data)
+                await manager.update_progress(
+                    str(project_id),
+                    str(session_id),
+                    {
+                        "status": "processing",
+                        "message": "Using structured data for RAG ingestion instead of full markdown",
+                        "current_chunk": 0,
+                        "total_chunks": 0,
+                        "percent_complete": 0
+                    }
+                )
+            else:
+                await manager.update_progress(
+                    str(project_id),
+                    str(session_id),
+                    {
+                        "status": "processing",
+                        "message": "Using full markdown content for RAG ingestion",
+                        "current_chunk": 0,
+                        "total_chunks": 0,
+                        "percent_complete": 0
+                    }
+                )
+
+            # Insert content into markdowns table (store the content being used for RAG)
             markdown_response = supabase.table("markdowns").insert({
                 "unique_name": unique_scrape_identifier,
                 "url": url,
-                "markdown": markdown_content
+                "markdown": content_to_ingest
             }).execute()
 
             if not markdown_response.data:
@@ -366,14 +398,14 @@ class RAGService:
                     str(session_id),
                     {
                         "status": "error",
-                        "message": "Failed to insert markdown content",
+                        "message": "Failed to insert content for RAG processing",
                         "error": "Database error"
                     }
                 )
                 return False
 
-            # Chunk the markdown content
-            chunks = await chunk_text(markdown_content)
+            # Chunk the content to ingest
+            chunks = await chunk_text(content_to_ingest)
             total_chunks = len(chunks)
 
             # Send initial progress update
@@ -481,3 +513,71 @@ class RAGService:
 
             # Re-raise the exception
             raise
+
+    def _convert_structured_data_to_text(self, structured_data: Dict[str, Any]) -> str:
+        """
+        Convert structured data to a text format suitable for RAG ingestion.
+        
+        Args:
+            structured_data (Dict[str, Any]): Structured data containing tabular_data
+            
+        Returns:
+            str: Text representation of the structured data
+        """
+        text_content = []
+        
+        # Add title if available
+        if "title" in structured_data:
+            text_content.append(f"# {structured_data['title']}")
+            text_content.append("")
+        
+        # Process tabular data - this is the main content we want for RAG
+        tabular_data = structured_data.get("tabular_data", [])
+        
+        if tabular_data:
+            text_content.append("## Extracted Data")
+            text_content.append("")
+            
+            # Convert each row of tabular data to readable text
+            for i, row in enumerate(tabular_data, 1):
+                text_content.append(f"### Item {i}")
+                for field, value in row.items():
+                    if value:  # Only include non-empty values
+                        # Clean up field names for better readability
+                        field_name = field.replace('_', ' ').title()
+                        text_content.append(f"**{field_name}:** {value}")
+                text_content.append("")
+        
+        # Add any additional sections if available
+        if "sections" in structured_data:
+            for section in structured_data["sections"]:
+                if "heading" in section and "content" in section:
+                    text_content.append(f"## {section['heading']}")
+                    text_content.append(section["content"])
+                    text_content.append("")
+        
+        # Add bullet points if available
+        if "bullet_points" in structured_data:
+            text_content.append("## Additional Information")
+            for point in structured_data["bullet_points"]:
+                text_content.append(f"- {point}")
+            text_content.append("")
+        
+        # Join all content with newlines
+        final_text = "\n".join(text_content)
+        
+        # If no meaningful content was created, fall back to a basic representation
+        if len(final_text.strip()) == 0 or final_text.strip() == "#":
+            final_text = f"Structured data containing {len(tabular_data)} items with the following information:\n\n"
+            if tabular_data:
+                # Create a summary of all available fields and their values
+                all_fields = set()
+                for row in tabular_data:
+                    all_fields.update(row.keys())
+                
+                for field in all_fields:
+                    values = [str(row.get(field, "")) for row in tabular_data if row.get(field)]
+                    if values:
+                        final_text += f"**{field.replace('_', ' ').title()}:** {', '.join(values[:3])}{'...' if len(values) > 3 else ''}\n"
+        
+        return final_text
