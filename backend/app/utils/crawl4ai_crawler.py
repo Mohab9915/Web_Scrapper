@@ -5,9 +5,20 @@ import json
 import asyncio
 import time
 import os
+import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timedelta, timezone
 from fastapi import HTTPException
+
+# Import the system resource checker
+try:
+    from app.utils.system_check import check_system_resources
+except ImportError:
+    # Define a fallback if the module is not available
+    def check_system_resources():
+        return {"has_sufficient_resources": True}
+import psutil
+import platform
 
 # Import crawl4ai framework classes
 try:
@@ -225,6 +236,55 @@ async def get_cache_stats() -> Dict[str, Any]:
                 "hit_rate": 0
             }
 
+def check_system_resources() -> Dict[str, Any]:
+    """
+    Check if the system has enough resources to run browser automation.
+    
+    Returns:
+        Dict[str, Any]: Dictionary with system resource information and status
+    """
+    try:
+        # Get system memory info
+        memory = psutil.virtual_memory()
+        available_memory_gb = round(memory.available / (1024 * 1024 * 1024), 2)
+        
+        # Get CPU load
+        cpu_percent = psutil.cpu_percent(interval=0.5)
+        
+        # Get disk space
+        disk = psutil.disk_usage('/')
+        free_disk_gb = round(disk.free / (1024 * 1024 * 1024), 2)
+        
+        # Check if we're running in a container with limited resources
+        in_container = os.path.exists('/.dockerenv')
+        
+        # Determine if resources are sufficient
+        has_sufficient_memory = available_memory_gb >= 1.0  # At least 1GB free
+        has_sufficient_cpu = cpu_percent < 90             # CPU not completely overloaded
+        has_sufficient_disk = free_disk_gb >= 1.0         # At least 1GB free disk
+        
+        return {
+            "system": platform.system(),
+            "release": platform.release(),
+            "available_memory_gb": available_memory_gb,
+            "cpu_percent": cpu_percent,
+            "free_disk_gb": free_disk_gb,
+            "in_container": in_container,
+            "has_sufficient_resources": has_sufficient_memory and has_sufficient_cpu and has_sufficient_disk,
+            "resource_issues": {
+                "memory": not has_sufficient_memory,
+                "cpu": not has_sufficient_cpu,
+                "disk": not has_sufficient_disk
+            }
+        }
+    except Exception as e:
+        # If we can't check resources, assume they're sufficient but log the error
+        print(f"Error checking system resources: {str(e)}")
+        return {
+            "has_sufficient_resources": True,
+            "error": str(e)
+        }
+
 async def scrape_url(url: str, formats: List[str] = ["markdown"], force_refresh: bool = False) -> Dict[str, Any]:
     """
     Scrape a URL using the crawl4ai framework with caching.
@@ -292,36 +352,74 @@ async def scrape_url(url: str, formats: List[str] = ["markdown"], force_refresh:
         additional_info={"force_refresh": force_refresh}
     )
 
+    # Check system resources before attempting browser automation
+    resource_check = check_system_resources()
+    if not resource_check.get("has_sufficient_resources", True):
+        logging.warning(f"Insufficient system resources for browser automation: {resource_check}")
+        print(f"⚠️ Limited system resources may impact browser performance: {resource_check}")
+        # We'll still try to run the browser, but with a warning
+
     try:
         start_time = time.time()
         
-        # Configure browser options
+        # Configure browser options with minimal, stable configuration
         browser_config = BrowserConfig(
             headless=True,
             java_script_enabled=True,  # Enable JavaScript for dynamic sites
-            text_mode=True,           # Disable images for faster crawling
-            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36"
-            # Removed timeout parameter as it's not supported
+            text_mode=False,           # Enable images to avoid issues with some sites
+            user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
+            verbose=False,             # Reduce logging verbosity
+            sleep_on_close=False,      # Don't wait before closing (can cause timeouts)
+            ignore_https_errors=True,  # Ignore HTTPS errors for more reliable scraping
+            # Use minimal browser arguments for maximum compatibility
+            extra_args=[
+                "--no-sandbox",
+                "--disable-setuid-sandbox", 
+                "--disable-dev-shm-usage",
+                "--disable-background-timer-throttling",
+                "--disable-backgrounding-occluded-windows",
+                "--disable-renderer-backgrounding"
+            ]
         )
         
-        # Configure crawler options
+        # Configure crawler options with conservative, reliable settings
         crawler_config = CrawlerRunConfig(
             cache_mode=CacheMode.BYPASS if force_refresh else CacheMode.ENABLED,
-            word_count_threshold=1,  # Include all content regardless of word count
+            word_count_threshold=1,      # Include all content regardless of word count
             markdown_generator=DefaultMarkdownGenerator(
                 content_filter=PruningContentFilter(threshold=0.4, threshold_type="fixed")
             ),
-            # Removed max_retries parameter as it's not supported in CrawlerRunConfig
-            page_timeout=60000  # Add page timeout (60 seconds) here instead of in BrowserConfig
+            page_timeout=30000,          # 30 seconds timeout (more reasonable)
+            wait_until="domcontentloaded", # Less strict than networkidle
+            ignore_body_visibility=False, # Default behavior
+            remove_overlay_elements=False # Default behavior to avoid issues
         )
         
-        # Initialize the crawler with retry logic
+        # Initialize the crawler with retry logic and proper cleanup
         max_attempts = 3
+        result = None
+        
         for attempt in range(max_attempts):
             try:
-                async with AsyncWebCrawler(config=browser_config) as crawler:
-                    # Fetch the page
-                    result = await crawler.arun(url, config=crawler_config)
+                # Add increasing backoff delay between attempts
+                if attempt > 0:
+                    delay = min(2 * (attempt + 1), 10)  # Cap at 10 seconds
+                    print(f"Waiting {delay} seconds before retry attempt {attempt+1}...")
+                    await asyncio.sleep(delay)
+                
+                print(f"Starting crawl attempt {attempt+1} of {max_attempts} for URL: {url}")
+                
+                # Create a fresh crawler instance for each attempt with explicit cleanup
+                crawler = None
+                try:
+                    crawler = AsyncWebCrawler(config=browser_config)
+                    await crawler.start()
+                    
+                    # Fetch the page with timeout handling
+                    result = await asyncio.wait_for(
+                        crawler.arun(url, config=crawler_config),
+                        timeout=45.0  # Total operation timeout
+                    )
                     
                     if not result.success:
                         error_message = result.error_message or "Unknown error"
@@ -337,21 +435,55 @@ async def scrape_url(url: str, formats: List[str] = ["markdown"], force_refresh:
                             raise HTTPException(status_code=500, detail=f"Error crawling page: {error_message}")
                         else:
                             print(f"Attempt {attempt+1} failed: {error_message}. Retrying...")
-                            await asyncio.sleep(1)  # Wait before retrying
                             continue
                     
                     # If we got here, the crawl was successful
+                    print(f"Crawl successful on attempt {attempt+1}")
                     break
+                    
+                except asyncio.TimeoutError:
+                    error_message = f"Operation timed out after 45 seconds"
+                    print(f"Timeout error on attempt {attempt+1}: {error_message}")
+                    
+                    # Log the error
+                    log_firecrawl_error(
+                        correlation_id=correlation_id,
+                        url=url,
+                        error_type="timeout_error",
+                        error_message=error_message
+                    )
+                    
+                    if attempt == max_attempts - 1:
+                        raise HTTPException(status_code=500, detail=f"Request timed out after {max_attempts} attempts")
+                    
+                finally:
+                    # Ensure crawler is properly cleaned up
+                    if crawler:
+                        try:
+                            await crawler.close()
+                        except Exception as e:
+                            print(f"Warning: Error closing crawler: {e}")
+                    
             except Exception as browser_error:
-                # Handle browser-specific errors
-                print(f"Browser error on attempt {attempt+1}: {str(browser_error)}")
+                # Handle browser-specific errors (outside crawler context)
+                error_message = str(browser_error)
+                print(f"Browser error on attempt {attempt+1}: {error_message}")
+                
+                # Log the error
+                log_firecrawl_error(
+                    correlation_id=correlation_id,
+                    url=url,
+                    error_type="browser_error",
+                    error_message=error_message
+                )
                 
                 # If this is the last attempt, re-raise the exception
                 if attempt == max_attempts - 1:
-                    raise
-                
-                # Otherwise wait and retry
-                await asyncio.sleep(1)  # Wait before retrying
+                    # Convert to HTTPException for better API error response
+                    raise HTTPException(
+                        status_code=500, 
+                        detail=f"Browser automation error after {max_attempts} attempts: {error_message}"
+                    )
         
         # Process the results based on requested formats
         content = {}

@@ -1,16 +1,19 @@
 """
 Improved RAG Service with better handling of obvious questions and context selection.
 """
-from typing import List, Dict, Any
+from typing import List, Dict, Any, Optional
+from uuid import UUID, uuid4
 import re
 import logging
 import json
 import httpx
 import numpy as np
+from datetime import datetime
 from app.utils.embedding import generate_embeddings
 from app.database import supabase
-from app.models.chat import RAGQueryResponse
+from app.models.chat import RAGQueryResponse, ChatMessageResponse
 from app.utils.firecrawl_api import AZURE_CHAT_MODEL
+from app.services.chat_history_service import ChatHistoryService
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -18,6 +21,9 @@ logger = logging.getLogger(__name__)
 
 class ImprovedRAGService:
     """Improved RAG functionality."""
+
+    def __init__(self):
+        self.chat_history_service = ChatHistoryService()
 
     def _is_obvious_question(self, query: str) -> bool:
         obvious_patterns = [
@@ -370,3 +376,115 @@ class ImprovedRAGService:
             generation_cost=generation_cost,
             source_documents=source_documents
         )
+
+    async def get_chat_messages(self, project_id: UUID, conversation_id: Optional[UUID] = None) -> List[ChatMessageResponse]:
+        """
+        Get chat messages for a project.
+
+        Args:
+            project_id (UUID): Project ID
+            conversation_id (Optional[UUID]): Specific conversation ID
+
+        Returns:
+            List[ChatMessageResponse]: List of chat messages
+        """
+        if conversation_id:
+            return await self.chat_history_service.get_conversation_messages(project_id, conversation_id)
+        else:
+            # Get the most recent conversation
+            conversations = await self.chat_history_service.get_project_conversations(project_id, limit=1)
+            if conversations:
+                return await self.chat_history_service.get_conversation_messages(
+                    project_id, UUID(conversations[0]["conversation_id"])
+                )
+            return []
+
+    async def post_chat_message(
+        self, 
+        project_id: UUID, 
+        content: str, 
+        azure_credentials: Dict[str, str],
+        conversation_id: Optional[UUID] = None,
+        session_id: Optional[UUID] = None
+    ) -> ChatMessageResponse:
+        """
+        Post a new chat message and get a response using Azure OpenAI.
+
+        Args:
+            project_id (UUID): Project ID
+            content (str): Message content
+            azure_credentials (Dict[str, str]): Dictionary containing 'api_key', 'endpoint', and optional 'deployment_name'
+            conversation_id (Optional[UUID]): Conversation ID, creates new if None
+            session_id (Optional[UUID]): Optional scrape session ID
+
+        Returns:
+            ChatMessageResponse: Response with assistant message
+
+        Raises:
+            HTTPException: If Azure OpenAI credentials are missing
+        """
+        from fastapi import HTTPException
+        
+        # Check if Azure OpenAI credentials are provided
+        if not azure_credentials or 'api_key' not in azure_credentials or 'endpoint' not in azure_credentials:
+            raise HTTPException(status_code=400, detail="Azure OpenAI credentials (api_key and endpoint) are required")
+
+        # Create or use existing conversation
+        if not conversation_id:
+            conversation_id = await self.chat_history_service.create_conversation(project_id, session_id)
+
+        # Save user message
+        user_message_id = await self.chat_history_service.save_message(
+            project_id=project_id,
+            conversation_id=conversation_id,
+            session_id=session_id,
+            role="user",
+            content=content,
+            metadata={"timestamp": datetime.now().isoformat()}
+        )
+
+        # Create user message
+        user_message = ChatMessageResponse(
+            id=str(user_message_id),
+            role="user",
+            content=content,
+            timestamp=datetime.now()
+        )
+
+        # Always use the correct chat model
+        deployment_name = AZURE_CHAT_MODEL
+
+        # Query RAG using Azure OpenAI
+        rag_response = await self.query_rag(
+            project_id,
+            content,
+            azure_credentials,
+            deployment_name
+        )
+
+        # Save assistant message
+        assistant_message_id = await self.chat_history_service.save_message(
+            project_id=project_id,
+            conversation_id=conversation_id,
+            session_id=session_id,
+            role="assistant",
+            content=rag_response.answer,
+            metadata={
+                "cost": rag_response.generation_cost,
+                "sources": [doc["metadata"]["url"] for doc in rag_response.source_documents] if rag_response.source_documents else [],
+                "model": deployment_name,
+                "timestamp": datetime.now().isoformat()
+            }
+        )
+
+        # Create assistant message
+        assistant_message = ChatMessageResponse(
+            id=str(assistant_message_id),
+            role="assistant",
+            content=rag_response.answer,
+            timestamp=datetime.now(),
+            cost=rag_response.generation_cost,
+            sources=[doc["metadata"]["url"] for doc in rag_response.source_documents] if rag_response.source_documents else None
+        )
+
+        return assistant_message

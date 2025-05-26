@@ -8,7 +8,7 @@ import SettingsModal from './SettingsModal';
 import ProjectsPanel from './ProjectsPanel';
 import RagPromptModal from './RagPromptModal';
 import ConfirmationModal from './ConfirmationModal';
-import { executeScrape, queryRagApi } from './lib/api';
+import { executeScrape, queryRagApi, getChatMessages, sendChatMessage, getProjectConversations, createConversation, deleteConversation, getConversationMessages } from './lib/api';
 
 function WebScrapingDashboard() {
   const [projects, setProjects] = useState([]);
@@ -20,6 +20,11 @@ function WebScrapingDashboard() {
 
   // Cache for scraping sessions to avoid redundant API calls
   const [sessionsCache, setSessionsCache] = useState({});
+
+  // Chat history state
+  const [currentConversationId, setCurrentConversationId] = useState(null);
+  const [conversations, setConversations] = useState({});
+  const [chatMessages, setChatMessages] = useState([]);
 
   // Fetch projects from the backend when the component mounts (only once)
   useEffect(() => {
@@ -73,6 +78,45 @@ function WebScrapingDashboard() {
 
     fetchProjects();
   }, []); // Only run once when component mounts
+
+  // Load chat data when active project changes
+  useEffect(() => {
+    const loadData = async () => {
+      if (activeProjectId) {
+        // Load conversations
+        try {
+          const projectConversations = await getProjectConversations(activeProjectId);
+          setConversations(prev => ({
+            ...prev,
+            [activeProjectId]: projectConversations || []
+          }));
+          
+          // If there's no current conversation but there are conversations, select the first one
+          if (projectConversations && projectConversations.length > 0 && !currentConversationId) {
+            setCurrentConversationId(projectConversations[0].id);
+          }
+        } catch (error) {
+          console.error('Error loading conversations:', error);
+        }
+      } else {
+        // Clear chat state when no project is selected
+        setCurrentConversationId(null);
+        setChatMessages([]);
+      }
+    };
+    
+    loadData();
+  }, [activeProjectId]);
+
+  // Load messages when conversation changes
+  useEffect(() => {
+    if (activeProjectId && currentConversationId) {
+      console.log('Conversation ID changed, loading messages for:', currentConversationId);
+      loadChatMessages(currentConversationId);
+    } else {
+      setChatMessages([]);
+    }
+  }, [activeProjectId, currentConversationId]);
 
   const [activeTab, setActiveTab] = useState('projects');
   const [selectedAiModel, setSelectedAiModel] = useState('gpt-4o-mini');
@@ -259,10 +303,14 @@ function WebScrapingDashboard() {
         }
 
         // Use tabular_data from the backend if available, otherwise create it
+        // --- FIX: Always map tabular_data to tabularData for frontend ---
         const tabularData = session.tabular_data || [structuredData];
-
-        // Use fields from the backend if available, otherwise create them from conditions
+        // --- FIX: Always map fields from session.fields or conditions ---
         const fields = session.fields || conditions.split(',').map(field => field.trim());
+        // --- FIX: Always map display_format from session or default ---
+        const display_format = session.display_format || displayFormat;
+        // --- FIX: Always map formatted_tabular_data to formatted_data ---
+        const formatted_data = session.formatted_tabular_data || null;
 
         // Create formatted results (simplified)
         const formattedResults = fields
@@ -275,11 +323,10 @@ function WebScrapingDashboard() {
             value: tabularData.length > 0 ? tabularData[0][field] : ''
           }));
 
-        // If no results were found, add some default ones
-        if (formattedResults.length === 0) {
-          formattedResults.push({ title: "URL", value: session.url });
-          formattedResults.push({ title: "Status", value: session.status });
-          formattedResults.push({ title: "Scraped At", value: new Date(session.scraped_at).toLocaleString() });
+        // Only add fallback metadata if no meaningful content was extracted and no tabularData exists
+        // This prevents unwanted metadata tables when actual content is available
+        if (formattedResults.length === 0 && (!tabularData || tabularData.length === 0)) {
+          // Don't create metadata tables - let the component handle empty state gracefully
         }
 
         // Create a scraping result entry
@@ -287,10 +334,10 @@ function WebScrapingDashboard() {
           url: session.url,
           conditions: conditions,
           results: formattedResults,
-          tabularData: tabularData,
-          fields: fields,
-          display_format: displayFormat || session.display_format || 'table',
-          formatted_data: session.formatted_tabular_data, // Use the formatted data from the backend
+          tabularData: tabularData, // <-- frontend expects tabularData
+          fields: fields,           // <-- frontend expects fields
+          display_format: display_format, // <-- frontend expects display_format
+          formatted_data: formatted_data, // <-- frontend expects formatted_data
           project_id: projectId,
           session_id: session.id
         };
@@ -410,8 +457,9 @@ function WebScrapingDashboard() {
 
       // Call the backend API to update the project's RAG status
       try {
+        // First, enable RAG at the project level
         const response = await fetch(`http://localhost:8000/api/v1/projects/${projectId}`, {
-          method: 'PATCH',
+          method: 'PUT',
           headers: {
             'Content-Type': 'application/json',
           },
@@ -421,29 +469,173 @@ function WebScrapingDashboard() {
         });
 
         if (!response.ok) {
-          console.error('Failed to update RAG status on the backend');
+          throw new Error('Failed to update RAG status');
         }
+
+        // Then, call the enable-rag endpoint to process the data
+        const ragResponse = await fetch(`http://localhost:8000/api/v1/projects/${projectId}/enable-rag`, {
+          method: 'POST'
+        });
+
+        if (!ragResponse.ok) {
+          throw new Error('Failed to process RAG data');
+        }
+
+        // Fetch sessions to update UI
+        fetchScrapingSessions(projectId);
       } catch (error) {
-        console.error('Error updating RAG status:', error);
+        console.error('Error setting up RAG:', error);
+        // Revert the local state since the operation failed
+        updateProjectById(projectId, { ragStatus: 'disabled' });
       }
     }
   };
 
   const handleSendMessage = async (userMessage, modelName, addSystemResponseCallback) => {
-    try {
-      console.log('Using model:', modelName); // Log the model name being used
-      
-      if (activeProject && activeProject.ragStatus === 'enabled') {
-        // Use our API client to query the RAG API
-        const result = await queryRagApi(activeProjectId, userMessage, modelName);
-        addSystemResponseCallback(result.answer);
-      } else {
-        // If RAG is not enabled, return an error message
-        addSystemResponseCallback("Chat is disabled. Please enable RAG for this project to use the chat functionality.");
+    if (!activeProject || activeProject.ragStatus !== 'enabled') {
+      console.log('RAG not enabled for this project, cannot send message');
+      return;
+    }
+
+    // Create a conversation if none exists
+    let conversationIdToUse = currentConversationId;
+    if (!conversationIdToUse) {
+      console.log('No conversation ID found, creating a new conversation...');
+      conversationIdToUse = await createNewConversation();
+      console.log('New conversation created with ID:', conversationIdToUse);
+      if (!conversationIdToUse) {
+        console.error('Failed to create a new conversation');
+        return;
       }
+    }
+
+    try {
+      console.log('Sending message with conversation ID:', conversationIdToUse);
+      console.log('Message content:', userMessage);
+      
+      // Set the current conversation ID
+      setCurrentConversationId(conversationIdToUse);
+      
+      // Update UI immediately with user message
+      const tempUserMessage = {
+        id: 'temp-' + Date.now(),
+        role: 'user',
+        content: userMessage,
+        timestamp: new Date()
+      };
+      setChatMessages(prev => [...prev, tempUserMessage]);
+      
+      // Also add a placeholder for the assistant response
+      const tempAssistantMessage = {
+        id: 'temp-assistant-' + Date.now(),
+        role: 'assistant',
+        content: 'Thinking...',
+        timestamp: new Date(),
+        isLoading: true
+      };
+      setChatMessages(prev => [...prev, tempAssistantMessage]);
+      
+      // Send the message using the new chat API
+      const response = await sendChatMessage(
+        activeProjectId, 
+        userMessage, 
+        conversationIdToUse, // Use the locally tracked conversation ID
+        null // session_id - can be added later if needed
+      );
+      
+      console.log('Response from sendChatMessage:', response);
+      
+      // Reload chat messages to get the latest conversation
+      await loadChatMessages(conversationIdToUse);
+      
     } catch (error) {
       console.error('Error sending message:', error);
-      addSystemResponseCallback(`Error: ${error.message || 'Failed to process your request'}`);
+      // Remove the loading message and add an error message
+      setChatMessages(prev => prev.filter(msg => !msg.isLoading));
+      setChatMessages(prev => [...prev, {
+        id: 'error-' + Date.now(),
+        role: 'system',
+        content: `Error: ${error.message || 'Failed to send message'}`,
+        timestamp: new Date(),
+        isError: true
+      }]);
+    }
+  };
+
+  // Chat history management functions
+  const loadChatMessages = async (conversationIdOverride = null) => {
+    const conversationIdToUse = conversationIdOverride || currentConversationId;
+    
+    if (!activeProjectId || !conversationIdToUse) {
+      setChatMessages([]);
+      return;
+    }
+    
+    try {
+      console.log('Loading messages for conversation:', conversationIdToUse);
+      // Use getConversationMessages which is specifically designed for fetching conversation messages
+      const messages = await getConversationMessages(activeProjectId, conversationIdToUse);
+      console.log('Retrieved messages:', messages);
+      setChatMessages(messages || []);
+    } catch (error) {
+      console.error('Error loading chat messages:', error);
+      setChatMessages([]);
+    }
+  };
+
+  const loadConversations = async () => {
+    if (!activeProjectId) return;
+    
+    try {
+      const conversations = await getProjectConversations(activeProjectId);
+      setConversations(prev => ({
+        ...prev,
+        [activeProjectId]: conversations || []
+      }));
+    } catch (error) {
+      console.error('Error loading conversations:', error);
+    }
+  };
+
+  const createNewConversation = async () => {
+    if (!activeProjectId) return;
+    
+    try {
+      console.log('Creating new conversation for project:', activeProjectId);
+      const response = await createConversation(activeProjectId);
+      console.log('New conversation created:', response);
+      const newConversationId = response.conversation_id;
+      setCurrentConversationId(newConversationId);
+      await loadConversations();
+      setChatMessages([]);
+      return newConversationId; // Return the new conversation ID for immediate use
+    } catch (error) {
+      console.error('Error creating conversation:', error);
+      return null;
+    }
+  };
+
+  const switchConversation = async (conversationId) => {
+    setCurrentConversationId(conversationId);
+    await loadChatMessages(conversationId);
+  };
+
+  const handleDeleteConversation = async (conversationId) => {
+    if (!activeProjectId) return;
+    
+    try {
+      await deleteConversation(activeProjectId, conversationId);
+      
+      // If we deleted the current conversation, clear it
+      if (currentConversationId === conversationId) {
+        setCurrentConversationId(null);
+        setChatMessages([]);
+      }
+      
+      // Reload conversations
+      await loadConversations();
+    } catch (error) {
+      console.error('Error deleting conversation:', error);
     }
   };
 
@@ -774,6 +966,9 @@ function WebScrapingDashboard() {
       );
       
       console.log('Scraping result:', result);
+      console.log('Result tabular_data:', result.tabular_data);
+      console.log('Result fields:', result.fields);
+      console.log('Result formatted_data:', result.formatted_data);
 
       // Update URLs to "completed" status
       const updatedUrlsForProject = activeProject.urls.map(url => ({ ...url, status: "completed" }));
@@ -801,19 +996,17 @@ function WebScrapingDashboard() {
           });
         }
 
-        // If no results were found, add some default ones
-        if (formattedResults.length === 0) {
-          formattedResults.push({ title: "Title", value: "Scraped from " + url.url });
-          formattedResults.push({ title: "Status", value: result.status });
-          formattedResults.push({ title: "Message", value: result.message });
-        }
+        // Only show data if we have meaningful scraped content - don't show metadata tables
+        // If no real content was extracted, don't create fallback metadata tables
 
         return {
           url: url.url,
           conditions: url.conditions,
           results: formattedResults,
           tabularData: tabularData,
-          fields: fields
+          fields: fields,
+          display_format: displayFormat, // Use displayFormat from the outer scope
+          formatted_data: result.formatted_data || null // Fix: use result.formatted_data, not result.formatted_tabular_data
         };
       });
 
@@ -861,10 +1054,36 @@ function WebScrapingDashboard() {
       console.log("Scraping operation completed successfully");
     } catch (error) {
       console.error('Error scraping URL:', error);
+      
+      // Enhanced error message handling
+      let errorMessage = error.message || 'Failed to scrape URL';
+      let actionableMessage = '';
+      
+      // Detect API key related errors
+      if (errorMessage.includes('Azure OpenAI credentials') || 
+          errorMessage.includes('api_key') || 
+          errorMessage.includes('endpoint')) {
+        actionableMessage = 'Azure OpenAI credentials are missing or invalid. Please check your API key and endpoint in Settings.';
+      } else if (errorMessage.includes('401') || errorMessage.includes('unauthorized')) {
+        actionableMessage = 'Authentication failed. Please verify your API credentials in Settings.';
+      } else if (errorMessage.includes('429') || errorMessage.includes('rate limit')) {
+        actionableMessage = 'API rate limit exceeded. Please wait a moment and try again.';
+      } else if (errorMessage.includes('403') || errorMessage.includes('forbidden')) {
+        actionableMessage = 'API access forbidden. Please check your API key permissions.';
+      } else if (errorMessage.includes('timeout') || errorMessage.includes('network')) {
+        actionableMessage = 'Network or timeout error. Please check your connection and try again.';
+      } else if (errorMessage.includes('quota') || errorMessage.includes('billing')) {
+        actionableMessage = 'API quota exceeded or billing issue. Please check your API account status.';
+      }
+      
+      const finalErrorMessage = actionableMessage 
+        ? `${actionableMessage}\n\nTechnical details: ${errorMessage}`
+        : `Error: ${errorMessage}`;
+      
       updateProjectById(activeProjectId, {
         ...baseUpdates,
         isScrapingError: true,
-        errorMessage: `Error: ${error.message || 'Failed to scrape URL'}`,
+        errorMessage: finalErrorMessage,
       });
     }
   };
@@ -1052,6 +1271,7 @@ function WebScrapingDashboard() {
             onStartScraping={handleStartScraping}
             onDeleteUrl={handleDeleteUrl}
             onDeleteScrapingResult={handleDeleteScrapingResult}
+            onOpenSettings={openSettingsModal}
             projectName={currentActiveProject.name}
           />
         ) : (<div className="p-6 text-center text-purple-300">Please select or create a project to manage URLs.</div>);
@@ -1062,6 +1282,12 @@ function WebScrapingDashboard() {
              isRagMode={currentActiveProject.ragStatus === 'enabled'}
              selectedModelName={selectedAiModel}
              onSendMessage={handleSendMessage}
+             conversations={conversations[activeProjectId] || []}
+             currentConversationId={currentConversationId}
+             chatMessages={chatMessages}
+             onCreateConversation={createNewConversation}
+             onSwitchConversation={switchConversation}
+             onDeleteConversation={(conversationId) => handleDeleteConversation(conversationId)}
              projectName={currentActiveProject.name}
             />
         ) : (<div className="p-6 text-center text-purple-300">Please select a project to use the chat.</div>);
@@ -1136,6 +1362,7 @@ function WebScrapingDashboard() {
             </div>
             <button
               onClick={openSettingsModal}
+              data-settings-button
               className="bg-purple-700 hover:bg-purple-600 p-2 rounded-lg flex items-center space-x-2"
             >
               <Settings size={18} />

@@ -14,30 +14,44 @@ from app.utils.text_processing import chunk_text
 from app.utils.embedding import generate_embeddings, calculate_embedding_cost, process_chunks_with_batching
 from app.utils.firecrawl_api import AZURE_EMBEDDING_MODEL, AZURE_CHAT_MODEL
 from app.utils.websocket_manager import manager
+from app.services.chat_history_service import ChatHistoryService
 
 class RAGService:
     """Service for RAG functionality."""
+    
+    def __init__(self):
+        self.chat_history_service = ChatHistoryService()
 
-    async def get_chat_messages(self, project_id: UUID) -> List[ChatMessageResponse]:
+    async def get_chat_messages(self, project_id: UUID, conversation_id: Optional[UUID] = None) -> List[ChatMessageResponse]:
         """
         Get chat messages for a project.
 
         Args:
             project_id (UUID): Project ID
+            conversation_id (Optional[UUID]): Specific conversation ID
 
         Returns:
             List[ChatMessageResponse]: List of chat messages
         """
-        # In a real implementation, this would retrieve messages from a database
-        # For now, we'll return an empty list
-        return []
+        if conversation_id:
+            return await self.chat_history_service.get_conversation_messages(project_id, conversation_id)
+        else:
+            # Get the most recent conversation
+            conversations = await self.chat_history_service.get_project_conversations(project_id, limit=1)
+            if conversations:
+                return await self.chat_history_service.get_conversation_messages(
+                    project_id, UUID(conversations[0]["conversation_id"])
+                )
+            return []
 
     async def query_rag(
         self,
         project_id: UUID,
         query: str,
         llm_model: str,
-        azure_credentials: Dict[str, str]
+        azure_credentials: Dict[str, str],
+        conversation_id: Optional[UUID] = None,
+        session_id: Optional[UUID] = None
     ) -> RAGQueryResponse:
         """
         Query the RAG system using Azure OpenAI Service.
@@ -194,7 +208,14 @@ class RAGService:
             source_documents=source_documents
         )
 
-    async def post_chat_message(self, project_id: UUID, content: str, azure_credentials: Dict[str, str]) -> ChatMessageResponse:
+    async def post_chat_message(
+        self, 
+        project_id: UUID, 
+        content: str, 
+        azure_credentials: Dict[str, str],
+        conversation_id: Optional[UUID] = None,
+        session_id: Optional[UUID] = None
+    ) -> ChatMessageResponse:
         """
         Post a new chat message and get a response using Azure OpenAI.
 
@@ -202,6 +223,8 @@ class RAGService:
             project_id (UUID): Project ID
             content (str): Message content
             azure_credentials (Dict[str, str]): Dictionary containing 'api_key', 'endpoint', and optional 'deployment_name'
+            conversation_id (Optional[UUID]): Conversation ID, creates new if None
+            session_id (Optional[UUID]): Optional scrape session ID
 
         Returns:
             ChatMessageResponse: Response with assistant message
@@ -213,9 +236,23 @@ class RAGService:
         if not azure_credentials or 'api_key' not in azure_credentials or 'endpoint' not in azure_credentials:
             raise HTTPException(status_code=400, detail="Azure OpenAI credentials (api_key and endpoint) are required")
 
+        # Create or use existing conversation
+        if not conversation_id:
+            conversation_id = await self.chat_history_service.create_conversation(project_id, session_id)
+
+        # Save user message
+        user_message_id = await self.chat_history_service.save_message(
+            project_id=project_id,
+            conversation_id=conversation_id,
+            session_id=session_id,
+            role="user",
+            content=content,
+            metadata={"timestamp": datetime.now().isoformat()}
+        )
+
         # Create user message
         user_message = ChatMessageResponse(
-            id=f"msg_{uuid.uuid4()}",
+            id=str(user_message_id),
             role="user",
             content=content,
             timestamp=datetime.now()
@@ -229,12 +266,29 @@ class RAGService:
             project_id,
             content,
             deployment_name,
-            azure_credentials
+            azure_credentials,
+            conversation_id,
+            session_id
+        )
+
+        # Save assistant message
+        assistant_message_id = await self.chat_history_service.save_message(
+            project_id=project_id,
+            conversation_id=conversation_id,
+            session_id=session_id,
+            role="assistant",
+            content=rag_response.answer,
+            metadata={
+                "cost": rag_response.generation_cost,
+                "sources": [doc["metadata"]["url"] for doc in rag_response.source_documents] if rag_response.source_documents else [],
+                "model": deployment_name,
+                "timestamp": datetime.now().isoformat()
+            }
         )
 
         # Create assistant message
         assistant_message = ChatMessageResponse(
-            id=f"msg_{uuid.uuid4()}",
+            id=str(assistant_message_id),
             role="assistant",
             content=rag_response.answer,
             timestamp=datetime.now(),

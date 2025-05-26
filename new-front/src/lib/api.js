@@ -63,33 +63,47 @@ async function fetchWithErrorHandling(url, options) {
     const response = await fetch(url, options);
 
     if (!response.ok) {
-      const errorData = await response.json().catch(() => ({ detail: 'Unknown error' }));
-
-      // Handle different error formats
-      let errorMessage;
-      if (typeof errorData === 'string') {
-        errorMessage = errorData;
-      } else if (errorData && typeof errorData.detail === 'string') {
-        errorMessage = errorData.detail;
-      } else if (errorData && Array.isArray(errorData.detail)) {
-        // Handle Pydantic validation errors which come as an array
-        const firstError = errorData.detail[0];
-        if (firstError && firstError.msg) {
-          errorMessage = `Validation error: ${firstError.msg} at ${firstError.loc.join('.')}`;
-        } else {
-          errorMessage = 'Validation error in request';
-        }
-      } else if (errorData && typeof errorData.message === 'string') {
-        errorMessage = errorData.message;
-      } else {
-        // If we can't extract a string message, stringify the entire object
-        try {
-          errorMessage = `API error: ${JSON.stringify(errorData)}`;
-        } catch (e) {
-          errorMessage = `API error: ${response.status}`;
-        }
+      let errorData;
+      let responseText = '';
+      try {
+        responseText = await response.text(); // Get text first
+        errorData = JSON.parse(responseText); // Try to parse as JSON
+      } catch (e) {
+        // Failed to parse as JSON
+        errorData = null; 
       }
 
+      let errorMessage;
+      if (errorData) { // If JSON parsing was successful
+        if (typeof errorData === 'string') {
+          errorMessage = errorData;
+        } else if (errorData.detail && typeof errorData.detail === 'string') {
+          errorMessage = errorData.detail;
+        } else if (errorData.detail && Array.isArray(errorData.detail)) {
+          // Handle Pydantic validation errors which come as an array
+          const firstError = errorData.detail[0];
+          if (firstError && firstError.msg) {
+            errorMessage = `Validation error: ${firstError.msg} at ${firstError.loc.join('.')}`;
+          } else {
+            errorMessage = 'Validation error in request';
+          }
+        } else if (errorData.message && typeof errorData.message === 'string') {
+          errorMessage = errorData.message;
+        } else {
+          // If we can't extract a string message, stringify the entire object
+          try {
+            errorMessage = `API error: ${JSON.stringify(errorData)}`;
+          } catch (stringifyError) {
+            errorMessage = `API error (unparseable JSON object): ${response.status}`;
+          }
+        }
+      } else { // If JSON parsing failed, use the responseText or a generic message
+        if (responseText && responseText.length < 500 && !responseText.trim().startsWith('<') && responseText.trim() !== '') { // Avoid long HTML pages and empty strings
+          errorMessage = responseText;
+        } else {
+          errorMessage = `API error: ${response.status} ${response.statusText || 'Server error'}`;
+        }
+      }
       throw new Error(errorMessage);
     }
 
@@ -306,5 +320,100 @@ export async function queryRagApi(projectId, userMessage, modelName) {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(requestBody),
     }
+  );
+}
+
+/**
+ * Get chat messages for a project/conversation
+ */
+export async function getChatMessages(projectId, conversationId = null) {
+  let url = `${API_URL}/projects/${projectId}/chat`;
+  if (conversationId) {
+    url += `?conversation_id=${conversationId}`;
+  }
+  return fetchWithErrorHandling(url);
+}
+
+/**
+ * Send a chat message and get a response
+ */
+export async function sendChatMessage(projectId, content, conversationId = null, sessionId = null) {
+  const azureCredentials = getAzureOpenAICredentials();
+  
+  let url = `${API_URL}/projects/${projectId}/chat`;
+  const params = new URLSearchParams();
+  
+  if (conversationId) {
+    params.append('conversation_id', conversationId);
+  }
+  if (sessionId) {
+    params.append('session_id', sessionId);
+  }
+  
+  // Add query parameters to the URL
+  if (params.toString()) {
+    url += `?${params.toString()}`;
+  }
+  
+  // The message body includes both content and Azure credentials
+  const messageBody = {
+    content: content,
+    azure_credentials: {
+      api_key: azureCredentials.api_key,
+      endpoint: azureCredentials.endpoint,
+      deployment_name: AZURE_CHAT_MODEL
+    }
+  };
+  
+  return fetchWithErrorHandling(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(messageBody)
+  });
+}
+
+/**
+ * Get all conversations for a project
+ */
+export async function getProjectConversations(projectId, limit = 50) {
+  return fetchWithErrorHandling(
+    `${API_URL}/projects/${projectId}/conversations?limit=${limit}`
+  );
+}
+
+/**
+ * Create a new conversation
+ */
+export async function createConversation(projectId, sessionId = null) {
+  let url = `${API_URL}/projects/${projectId}/conversations`;
+  if (sessionId) {
+    url += `?session_id=${sessionId}`;
+  }
+  
+  return fetchWithErrorHandling(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({}),
+  });
+}
+
+/**
+ * Delete a conversation
+ */
+export async function deleteConversation(projectId, conversationId) {
+  return fetchWithErrorHandling(
+    `${API_URL}/projects/${projectId}/conversations/${conversationId}`,
+    {
+      method: 'DELETE',
+    }
+  );
+}
+
+/**
+ * Get messages for a specific conversation
+ */
+export async function getConversationMessages(projectId, conversationId, limit = 100) {
+  return fetchWithErrorHandling(
+    `${API_URL}/projects/${projectId}/conversations/${conversationId}/messages?limit=${limit}`
   );
 }

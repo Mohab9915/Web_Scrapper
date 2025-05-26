@@ -267,8 +267,12 @@ async def extract_data_with_regex(
                 if field in fields:
                     row[field] = ""
 
-        # Only add the row if it has at least one non-empty value and contains ONLY the requested fields
-        if any(value for value in row.values()) and all(field in fields for field in row.keys()):
+        # Only add the row if it has at least one non-empty value, contains ONLY the requested fields,
+        # and the extracted values are meaningful (not just empty strings or generic content)
+        meaningful_values = [v for v in row.values() if v and v.strip() and len(v.strip()) > 3]
+        if (len(meaningful_values) >= len(fields) * 0.5 and  # At least 50% of fields have meaningful values
+            all(field in fields for field in row.keys()) and
+            any(value for value in row.values())):
             tabular_data.append(row)
 
     return tabular_data

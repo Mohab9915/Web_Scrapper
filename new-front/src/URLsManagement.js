@@ -11,6 +11,7 @@ function URLManagementPanel({
   scrapingResults,
   isScrapingError,
   errorMessage,
+  onOpenSettings,
   projectName,
 }) {
   const [newUrl, setNewUrl] = useState('');
@@ -278,9 +279,34 @@ function URLManagementPanel({
 
         {isScrapingError && (
           <div className="bg-red-900 bg-opacity-50 p-4 rounded-lg border border-red-700 mb-6">
-            <div className="flex items-center text-red-300">
-              <AlertCircle className="mr-2" size={20} />
-              <span>{errorMessage}</span>
+            <div className="flex items-start text-red-300">
+              <AlertCircle className="mr-3 mt-1 flex-shrink-0" size={20} />
+              <div className="flex-1">
+                <div className="font-medium mb-2">Scraping Failed</div>
+                <div className="text-sm whitespace-pre-line">{errorMessage}</div>
+                {errorMessage.includes('Azure OpenAI credentials') && (
+                  <div className="mt-3">
+                    <button
+                      onClick={() => {
+                        if (onOpenSettings) {
+                          onOpenSettings();
+                        } else {
+                          // Fallback to finding the settings button
+                          const settingsButton = document.querySelector('[data-settings-button]');
+                          if (settingsButton) {
+                            settingsButton.click();
+                          } else {
+                            alert('Please open Settings to configure your Azure OpenAI credentials.');
+                          }
+                        }
+                      }}
+                      className="bg-red-700 hover:bg-red-600 text-white px-3 py-1 rounded text-sm transition-colors"
+                    >
+                      Open Settings
+                    </button>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
         )}
@@ -331,7 +357,7 @@ function URLManagementPanel({
                       </div>
 
                       {/* Table View */}
-                      {(result.display_format === 'table' || !result.display_format) && result.tabularData && result.tabularData.length > 0 && (
+                      {result.display_format === 'table' && result.tabularData && result.tabularData.length > 0 && result.fields && result.fields.length > 0 && (
                         <table className="w-full text-sm">
                           <thead>
                             <tr className="text-indigo-300 border-b border-indigo-700">
@@ -368,8 +394,8 @@ function URLManagementPanel({
                         </div>
                       )}
 
-                      {/* Fallback to the old display method if no tabular data */}
-                      {(!result.tabularData || result.tabularData.length === 0) && (
+                      {/* Fallback table - show only when there's actual scraped content */}
+                      {result.display_format === 'table' && (!result.tabularData || result.tabularData.length === 0) && result.results && result.results.length > 0 && (
                         <table className="w-full text-sm">
                           <thead>
                             <tr className="text-indigo-300 border-b border-indigo-700">

@@ -265,8 +265,14 @@ class ScrapingService:
         embedding_cost = 0.0
         if rag_enabled:
             # Check if Azure OpenAI credentials are provided
-            if not api_keys or 'api_key' not in api_keys or 'endpoint' not in api_keys:
-                raise HTTPException(status_code=400, detail="Azure OpenAI credentials (api_key and endpoint) are required for RAG processing")
+            if not api_keys:
+                raise HTTPException(status_code=400, detail="Azure OpenAI credentials are required for RAG processing. Please configure your API key and endpoint in the frontend Settings.")
+            
+            if 'api_key' not in api_keys or not api_keys.get('api_key'):
+                raise HTTPException(status_code=400, detail="Azure OpenAI API key is missing. Please set your API key in the frontend Settings.")
+                
+            if 'endpoint' not in api_keys or not api_keys.get('endpoint'):
+                raise HTTPException(status_code=400, detail="Azure OpenAI endpoint is missing. Please set your endpoint URL in the frontend Settings.")
 
             # Ensure the correct embedding model is used
             embedding_api_keys = {

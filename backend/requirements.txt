@@ -12,3 +12,4 @@ crawl4ai>=0.1.0  # Advanced web scraping framework
 # Azure OpenAI specific packages
 azure-identity>=1.12.0  # For Azure authentication (if needed)
 azure-core>=1.26.0      # Core functionality for Azure SDK
+psutil>=5.9.0           # For system resource monitoring

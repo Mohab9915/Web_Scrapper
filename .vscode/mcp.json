@@ -1,0 +1,48 @@
+{
+"servers": {
+    "filesystem": {
+    "command": "npx",
+    "args": [
+        "-y",
+        "@modelcontextprotocol/server-filesystem",
+        "${workspaceFolder}"
+    ]
+    },
+    "puppeteer": {
+        "command": "npx",
+        "args": ["-y", "@modelcontextprotocol/server-puppeteer"]
+      },
+    
+    "playwright": {
+      "command": "npx",
+      "args": ["-y", "@automatalabs/mcp-server-playwright"]
+    },
+    "sequential-thinking": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-sequential-thinking"
+      ]
+    },
+    "brave-search": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-brave-search"
+      ],
+      "env": {
+        "BRAVE_API_KEY": "BSAddU-1eU5P7s2c8d_ApCs1b4Q21Ek"
+      }
+    },
+    "memory": {
+      "command": "npx",
+      "args": [
+        "-y",
+        "@modelcontextprotocol/server-memory"
+      ],
+      "env": {
+        "MEMORY_FILE_PATH": "/home/mohab/Downloads/studio-master_backup/studio-master/.vscode/mcp.json"
+      }
+    }
+}
+}

@@ -14,6 +14,11 @@ class ChatMessageCreate(ChatMessageBase):
     """Model for creating a new chat message."""
     pass
 
+class ChatMessageRequest(BaseModel):
+    """Model for chat message request including Azure credentials."""
+    content: str
+    azure_credentials: Optional[Dict[str, str]] = None  # Must contain 'api_key' and 'endpoint' for Azure
+
 class ChatMessageResponse(ChatMessageBase):
     """Model for chat message response."""
     id: str

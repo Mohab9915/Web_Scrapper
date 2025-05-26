@@ -7,6 +7,11 @@ from fastapi.responses import JSONResponse
 
 from app.api import projects, scraping, rag, websockets, cache, project_urls, history
 from app.config import settings
+# Import diagnostics separately to avoid module not found errors
+try:
+    from app.api import diagnostics
+except ImportError:
+    print("Warning: Diagnostics module not available")
 
 app = FastAPI(
     title="Interactive Agentic Web Scraper & RAG System API",
@@ -31,6 +36,14 @@ app.include_router(websockets.router, prefix=settings.API_V1_STR)
 app.include_router(cache.router, prefix=settings.API_V1_STR)
 app.include_router(project_urls.router, prefix=settings.API_V1_STR)
 app.include_router(history.router, prefix=settings.API_V1_STR)
+
+# Include diagnostics router if available
+try:
+    if hasattr(diagnostics, 'router'):
+        app.include_router(diagnostics.router, prefix=settings.API_V1_STR)
+        print("Diagnostics endpoints enabled")
+except (NameError, AttributeError) as e:
+    print(f"Warning: Diagnostics endpoints not available: {str(e)}")
 
 @app.get("/health")
 async def health_check():
