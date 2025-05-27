@@ -8,13 +8,28 @@ from datetime import datetime
 import json
 import csv
 import io
+import asyncio # Added for loop.run_in_executor
+import os # Added for os.environ manipulation
 
-from app.database import supabase
-from app.models.scrape_session import ScrapedSessionResponse, InteractiveScrapingResponse, ExecuteScrapeResponse, ExecuteScrapeRequest
-from app.utils.browser_control import launch_browser_session
-from app.utils.text_processing import structure_scraped_data, format_data_for_display
-from app.utils.crawl4ai_crawler import scrape_url, extract_structured_data, AZURE_EMBEDDING_MODEL, AZURE_CHAT_MODEL
-from app.services.rag_service import RAGService
+from ..database import supabase
+from ..models.scrape_session import ScrapedSessionResponse, InteractiveScrapingResponse, ExecuteScrapeResponse, ExecuteScrapeRequest
+from ..utils.browser_control import launch_browser_session # Keep for interactive, if still used
+# Removed: from app.utils.text_processing import structure_scraped_data, format_data_for_display
+# Removed: from app.utils.crawl4ai_crawler import scrape_url, extract_structured_data, AZURE_EMBEDDING_MODEL, AZURE_CHAT_MODEL
+from ..utils.text_processing import format_data_for_display # Added import
+
+# New imports from Scrape_Master modules
+from ..scraper_modules.markdown import fetch_and_store_markdowns, read_raw_data
+from ..scraper_modules.scraper import scrape_urls as new_scrape_structured_data # aliased
+from ..scraper_modules.assets import OPENAI_MODEL_FULLNAME, AZURE_EMBEDDING_MODEL # Keep AZURE_EMBEDDING_MODEL if RAG uses it
+# Note: AZURE_CHAT_MODEL might not be used by the new scraper logic directly, review if needed for RAG or other parts.
+# The new scraper uses LiteLLM, so model selection is handled differently.
+
+from .rag_service import RAGService
+# Need to handle text_processing functions if they are still required
+# For now, assuming new scraper modules handle their formatting, or it's simplified.
+# If format_data_for_display is crucial, it needs to be re-evaluated.
+# For structure_scraped_data, its role is now taken by new_scrape_structured_data + LLM call.
 
 class ScrapingService:
     """Service for web scraping."""
@@ -22,55 +37,122 @@ class ScrapingService:
     def __init__(self, rag_service: RAGService = Depends()):
         self.rag_service = rag_service
 
-    async def get_sessions_by_project(self, project_id: UUID) -> List[ScrapedSessionResponse]:
+    async def get_sessions_by_project(self, project_id: UUID) -> List[Dict[str, Any]]:
         """
-        Get all scraped sessions for a project.
-
+        Get all URLs for a project, including their latest scrape session data if available.
         Args:
             project_id (UUID): Project ID
-
         Returns:
-            List[ScrapedSessionResponse]: List of scraped sessions
+            List[Dict[str, Any]]: List of URLs with their status and latest scrape data.
         """
-        response = supabase.table("scrape_sessions").select("*").eq("project_id", str(project_id)).execute()
+        # Select fields from project_urls and explicitly from the joined scrape_sessions table (aliased as latest_session_data)
+        # Ensure all fields required by ScrapedSessionResponse (especially created_at for scraped_at) are selected from scrape_sessions.
+        project_urls_query = supabase.table("project_urls").select(
+            "id, project_id, url, conditions, display_format, created_at, status, rag_enabled, last_scraped_session_id, " +
+            "latest_session_data:last_scraped_session_id(id, project_id, url, scraped_at, status, raw_markdown, structured_data_json, display_format, formatted_tabular_data)" # Changed markdown_content to raw_markdown
+        ).eq("project_id", str(project_id)).order("created_at", desc=True)
+        
+        project_urls_response = project_urls_query.execute()
+        
+        if not project_urls_response.data:
+            return []
 
-        sessions = []
-        for session in response.data:
-            # Create a copy of the session data to modify
-            session_data = dict(session)
+        results = []
+        for pu_entry in project_urls_response.data:
+            session_data_for_model = {}
+            raw_session_data = pu_entry.get("latest_session_data")
 
-            # Parse the structured_data_json field
-            if "structured_data_json" in session_data and session_data["structured_data_json"]:
+            if raw_session_data and isinstance(raw_session_data, dict) and raw_session_data.get("id"):
+                # Copy raw data to prepare for model instantiation
+                session_data_for_model = dict(raw_session_data)
+                
+                # Reconstruct derived fields for ScrapedSessionResponse
+                # structured_data, tabular_data, fields
+                
+                # Get fields from project_urls.conditions first, as this is the source of truth for desired columns
+                conditions_str = pu_entry.get("conditions", "")
+                session_fields = [field.strip() for field in conditions_str.split(',')] if conditions_str else []
+                session_data_for_model["fields"] = session_fields
+
+                if "structured_data_json" in session_data_for_model and session_data_for_model["structured_data_json"]:
+                    try:
+                        structured_data = json.loads(session_data_for_model["structured_data_json"])
+                        session_data_for_model["structured_data"] = structured_data  # Keep the parsed dict
+                        
+                        current_tabular_data = []
+                        if isinstance(structured_data.get("listings"), list):
+                            current_tabular_data = structured_data["listings"]
+                        elif isinstance(structured_data, list): # Should not happen with current LLM output but robust
+                            current_tabular_data = structured_data
+                        elif isinstance(structured_data, dict):
+                            # If it's a dict, and not 'listings', treat the dict itself as a single row
+                            current_tabular_data = [structured_data]
+                        
+                        session_data_for_model["tabular_data"] = current_tabular_data
+                        
+                        # If fields were not derived from conditions (e.g. conditions were empty), 
+                        # try to get them from the first row of the reconstructed tabular_data.
+                        # However, conditions should be the primary source.
+                        if not session_fields and current_tabular_data and isinstance(current_tabular_data[0], dict):
+                            session_data_for_model["fields"] = list(current_tabular_data[0].keys())
+                        
+                    except Exception as e:
+                        print(f"Error parsing structured_data_json for session {session_data_for_model.get('id')}: {e}")
+                        session_data_for_model["structured_data"] = None # Nullify on error
+                        session_data_for_model["tabular_data"] = []
+                        # Fields are already set from conditions or will remain empty if conditions were empty
+                else: 
+                    session_data_for_model["structured_data"] = None
+                    session_data_for_model["tabular_data"] = []
+                    # Fields are already set from conditions or will remain empty if conditions were empty
+
+                # formatted_tabular_data (already fetched as JSON string, parse it)
+                if "formatted_tabular_data" in session_data_for_model and session_data_for_model["formatted_tabular_data"]:
+                    try:
+                        # Ensure it's a string before trying to load if it might already be parsed by some Supabase clients
+                        if isinstance(session_data_for_model["formatted_tabular_data"], str):
+                           session_data_for_model["formatted_tabular_data"] = json.loads(session_data_for_model["formatted_tabular_data"])
+                        # If it's already a dict (parsed by Supabase client), use as is.
+                        elif not isinstance(session_data_for_model["formatted_tabular_data"], dict):
+                            print(f"Warning: formatted_tabular_data for session {session_data_for_model.get('id')} is not a string or dict. Type: {type(session_data_for_model['formatted_tabular_data'])}")
+                            session_data_for_model["formatted_tabular_data"] = None # Nullify if unexpected type
+                    except Exception as e:
+                        print(f"Error parsing formatted_tabular_data for session {session_data_for_model.get('id')}: {e}")
+                        session_data_for_model["formatted_tabular_data"] = None # Nullify on error
+                else:
+                     session_data_for_model["formatted_tabular_data"] = None
+
+
+                # Download links
+                session_id_str = str(session_data_for_model['id'])
+                session_data_for_model["download_link_json"] = f"/download/{project_id}/{session_id_str}/json"
+                session_data_for_model["download_link_csv"] = f"/download/{project_id}/{session_id_str}/csv"
+                # Note: ScrapedSessionResponse model doesn't have download_link_pdf, so it won't be used by Pydantic
+
+                # Ensure all required fields for ScrapedSessionResponse are present before instantiation
+                # id, project_id, url, created_at (for scraped_at), status are directly from DB select
+                # If any are missing, Pydantic will raise error. The explicit select should prevent this.
+                # The model expects 'url' as HttpUrl, 'id' as UUID, 'project_id' as UUID.
+                # Data from Supabase for these fields should be compatible.
+                # 'created_at' will be used for 'scraped_at' due to alias.
+
+            # Clean pu_entry by removing the joined data before spreading
+            pu_data_cleaned = {k: v for k, v in pu_entry.items() if k != 'latest_session_data'}
+            
+            final_session_data_obj = None
+            if session_data_for_model and session_data_for_model.get("id"):
                 try:
-                    structured_data = json.loads(session_data["structured_data_json"])
-                    session_data["structured_data"] = structured_data
-
-                    # Extract tabular data
-                    if "tabular_data" in structured_data:
-                        session_data["tabular_data"] = structured_data["tabular_data"]
-
-                        # Extract fields from the first row of tabular data
-                        if structured_data["tabular_data"] and len(structured_data["tabular_data"]) > 0:
-                            session_data["fields"] = list(structured_data["tabular_data"][0].keys())
-                except Exception as e:
-                    print(f"Error parsing structured_data_json: {e}")
-
-            # Parse the formatted_tabular_data field
-            if "formatted_tabular_data" in session_data and session_data["formatted_tabular_data"]:
-                try:
-                    formatted_data = json.loads(session_data["formatted_tabular_data"])
-                    session_data["formatted_tabular_data"] = formatted_data
-                except Exception as e:
-                    print(f"Error parsing formatted_tabular_data: {e}")
-
-            # Generate download links
-            session_data["download_link_json"] = f"/download/{project_id}/{session_data['id']}/json"
-            session_data["download_link_csv"] = f"/download/{project_id}/{session_data['id']}/csv"
-
-            # Create the response object
-            sessions.append(ScrapedSessionResponse(**session_data))
-
-        return sessions
+                    final_session_data_obj = ScrapedSessionResponse(**session_data_for_model)
+                except Exception as e: # Catch Pydantic validation error
+                    print(f"Pydantic validation error for session {session_data_for_model.get('id')}: {e}")
+                    # Optionally, log session_data_for_model here to debug
+            
+            results.append({
+                **pu_data_cleaned,
+                "latest_scrape_data": final_session_data_obj
+            })
+            
+        return results
 
     async def initiate_interactive_scrape(self, project_id: UUID, initial_url: str) -> InteractiveScrapingResponse:
         """
@@ -128,228 +210,278 @@ class ScrapingService:
             raise HTTPException(status_code=404, detail="Project not found")
 
         project = project_response.data
-        rag_enabled = project["rag_enabled"]
+        rag_enabled_for_project = project.get("rag_enabled", False) # RAG enabled for the whole project
 
         # Extract parameters from the request
         current_page_url = request.current_page_url
-        session_id = request.session_id
+        # session_id from request is for interactive scraping, we'll generate a new one for this execution
         api_keys = request.api_keys
         force_refresh = request.force_refresh
         display_format = request.display_format or "table"
-        request_conditions = request.conditions  # Get conditions from the request if provided
+        request_conditions = request.conditions
+
+        # Determine if RAG is enabled for this specific URL
+        # This will be fetched/updated later, default to project setting for now
+        rag_enabled_for_url = rag_enabled_for_project
+
+        # Manage project_urls entry
+        project_url_entry = None
+        try:
+            project_url_response = supabase.table("project_urls").select("*").eq("project_id", str(project_id)).eq("url", current_page_url).maybe_single().execute()
+            if project_url_response.data:
+                project_url_entry = project_url_response.data
+                rag_enabled_for_url = project_url_entry.get("rag_enabled", rag_enabled_for_project) # Use URL specific RAG setting if available
+                # If re-scraping, delete old session and its RAG data
+                if project_url_entry.get("last_scraped_session_id"):
+                    old_session_id = project_url_entry["last_scraped_session_id"]
+                    print(f"Deleting old scrape session {old_session_id} for URL {current_page_url}")
+                    await self.delete_session_by_id(UUID(old_session_id)) # delete_session_by_id handles RAG data deletion
+                
+                # Update status to 'processing'
+                supabase.table("project_urls").update({"status": "processing"}).eq("id", project_url_entry["id"]).execute()
+            else:
+                # Insert new entry with 'pending' status, will be updated to 'processing'
+                new_project_url_data = {
+                    "project_id": str(project_id),
+                    "url": current_page_url,
+                    "conditions": request_conditions or "title, description, price, content", # Default conditions if not provided
+                    "display_format": display_format,
+                    "status": "processing", # Start as processing
+                    "rag_enabled": rag_enabled_for_url # Use project's RAG setting by default for new URLs
+                }
+                insert_response = supabase.table("project_urls").insert(new_project_url_data).execute()
+                if insert_response.data:
+                    project_url_entry = insert_response.data[0]
+                else:
+                    raise HTTPException(status_code=500, detail="Failed to create project URL entry.")
+        except Exception as e:
+            print(f"Error managing project_urls entry: {e}")
+            raise HTTPException(status_code=500, detail=f"Error managing project_urls entry: {str(e)}")
+
+        # Generate a new session_id for this scrape execution
+        current_session_id = str(uuid4())
 
         try:
             # Check if caching is enabled for this project
-            caching_enabled = project.get("caching_enabled", True)  # Default to True for backward compatibility
-
-            # Determine whether to use cache:
-            # - If caching is disabled for the project, always force refresh
-            # - If force_refresh is True in the request, bypass cache
+            caching_enabled = project.get("caching_enabled", True)
             use_force_refresh = force_refresh or not caching_enabled
 
-            # Use Crawl4AI framework to scrape the page with caching
-            try:
-                scrape_result = await scrape_url(
-                    current_page_url,
-                    formats=["markdown", "html"],
-                    force_refresh=use_force_refresh
-                )
-            except Exception as e:
-                print(f"Error scraping URL with crawl4ai: {e}")
-                raise HTTPException(status_code=500, detail=f"Failed to scrape URL: {str(e)}")
+            # --- New Scraper Logic ---
+            # 1. Fetch and store markdown
+            # fetch_and_store_markdowns expects a list of URLs.
+            # It internally calls crawl4ai's AsyncWebCrawler.
+            print(f"Attempting to fetch markdown for URL: {current_page_url} with new scraper logic.")
+            unique_names_list = await fetch_and_store_markdowns([current_page_url])
+            if not unique_names_list:
+                raise HTTPException(status_code=500, detail="Failed to generate unique name or initial markdown fetch failed.")
+            unique_name = unique_names_list[0]
 
-            # Extract markdown content from the result
-            markdown_content = scrape_result.get("markdown", "")
+            # 2. Read the stored raw markdown
+            # read_raw_data is synchronous. Call it using run_in_executor.
+            loop = asyncio.get_event_loop()
+            markdown_content = await loop.run_in_executor(None, read_raw_data, unique_name)
+            # Removed incorrect line: markdown_content = await read_raw_data(unique_name)
 
-            # If no markdown content was returned, create a fallback message
+
             if not markdown_content:
                 markdown_content = f"# Failed to scrape content from {current_page_url}\n\nThe scraping operation did not return any content."
+                # Update status to failed if markdown is empty after fetch
+                if project_url_entry:
+                    supabase.table("project_urls").update({"status": "failed"}).eq("id", project_url_entry["id"]).execute()
+                # Also update session if one was to be created
+                # For now, we'll let it proceed to create a session with this error message.
 
-            # Get metadata from the result
-            metadata = scrape_result.get("metadata", {})
-            page_title = metadata.get("title", "Untitled Page")
+            # Ensure page title is at the start of markdown_content (if possible)
+            # The new scraper's markdown might already include it. This part might need review.
+            # For now, let's assume markdown_content is complete.
 
-            # Add page title to the markdown content if it's not already there
-            if not markdown_content.startswith(f"# {page_title}"):
-                markdown_content = f"# {page_title}\n\n{markdown_content}"
-
-        except HTTPException as e:
-            # Re-raise HTTP exceptions with their original status code and detail
-            raise e
         except Exception as e:
-            # Handle other errors
-            error_message = str(e)
-            raise HTTPException(status_code=500, detail=f"Failed to scrape URL: {error_message}")
+            if project_url_entry:
+                supabase.table("project_urls").update({"status": "failed"}).eq("id", project_url_entry["id"]).execute()
+            print(f"Error during markdown fetching stage with new scraper: {e}")
+            raise HTTPException(status_code=500, detail=f"Failed during markdown fetching: {str(e)}")
 
-        # Get conditions from the request, project, or URL
-        # Priority order:
-        # 1. Conditions from the request (highest priority)
-        # 2. Conditions from the database
-        # 3. Default conditions (lowest priority)
-        conditions = None
+        # Determine conditions (fields to extract)
+        conditions_str = request_conditions
+        if not conditions_str and project_url_entry and project_url_entry.get("conditions"):
+            conditions_str = project_url_entry["conditions"]
+        if not conditions_str: # Fallback to default
+            conditions_str = "title, description, price, content" # Default from old logic
+        
+        fields = [field.strip() for field in conditions_str.split(',')] # Renamed fields_list to fields
 
-        # First, check if conditions were provided in the request
-        if request_conditions and request_conditions.strip():
-            conditions = request_conditions.strip()
-            print(f"Using conditions from request: {conditions}")
-        else:
-            # If not in request, try to get from database
-            try:
-                # Check if the project has URLs with conditions
-                project_urls_response = supabase.table("project_urls").select("conditions").eq("project_id", str(project_id)).eq("url", current_page_url).execute()
-                if project_urls_response.data and project_urls_response.data[0].get("conditions"):
-                    conditions = project_urls_response.data[0].get("conditions")
-                    print(f"Using conditions from database: {conditions}")
-                else:
-                    # Only use default conditions if no conditions were found anywhere
-                    conditions = "title, description, price, content"
-                    print(f"No conditions found for URL {current_page_url}, using default conditions: {conditions}")
-            except Exception as e:
-                print(f"Error getting conditions from database: {e}")
-                # Default conditions if there's an error
-                conditions = "title, description, price, content"
-                print(f"Using default conditions due to error: {conditions}")
+        # Update conditions in project_urls if they changed or were defaulted
+        if project_url_entry and project_url_entry.get("conditions") != conditions_str:
+             supabase.table("project_urls").update({"conditions": conditions_str}).eq("id", project_url_entry["id"]).execute()
 
-        # Structure the scraped data with conditions and Azure credentials
+        # Set API keys as environment variables for LiteLLM, if provided in request
+        # This is a temporary workaround for backend usage. Proper config management is better.
+        if api_keys:
+            for key_name, key_value in api_keys.items():
+                # Ensure key_name matches expected env var names like OPENAI_API_KEY, GEMINI_API_KEY
+                # This part needs to be robust. For now, assuming direct match or specific handling.
+                # Example: if api_keys = {"OPENAI_API_KEY": "sk-...", "model_name": "gpt-4o-mini"}
+                if key_value: # Only set if value is provided
+                    os.environ[key_name.upper()] = key_value # Make sure it's upper, e.g. openai_api_key -> OPENAI_API_KEY
+
+        # 3. Parse structured data using LLM via new_scrape_structured_data
+        # Determine selected_model. For now, using a default.
+        # This should ideally come from project settings or request.
+        selected_model_name = OPENAI_MODEL_FULLNAME # Default from new assets
+        # If api_keys dict contains a 'model_name', use it.
+        if api_keys and api_keys.get("model_name"):
+            selected_model_name = api_keys.get("model_name")
+        
+        structured_data_results = None
         try:
-            structured_data = await structure_scraped_data(
-                markdown_content,
-                conditions,
-                api_keys if api_keys else None
-            )
+            # new_scrape_structured_data returns: total_input_tokens, total_output_tokens, total_cost, parsed_results
+            # parsed_results is a list of dicts: [{"unique_name": uniq, "parsed_data": parsed}]
+            _, _, _, parsed_results_list = await loop.run_in_executor(None, new_scrape_structured_data, [unique_name], fields, selected_model_name) # Used fields
+            
+            if parsed_results_list and parsed_results_list[0].get("parsed_data"):
+                structured_data_raw = parsed_results_list[0]["parsed_data"]
+                # The 'parsed_data' from Scrape_Master is already the structured dict/Pydantic model
+                # It's often a container like {"listings": [...]}
+                if hasattr(structured_data_raw, "model_dump"): # Pydantic model
+                    structured_data = structured_data_raw.model_dump()
+                elif isinstance(structured_data_raw, str): # JSON string
+                    structured_data = json.loads(structured_data_raw)
+                else: # Already a dict
+                    structured_data = structured_data_raw
+                
+                # The Scrape_Master format is often {"listings": [...]}.
+                # The old format expected {"tabular_data": [...]}. We need to adapt.
+                # For now, let's assume the new 'structured_data' is the primary output.
+                # If it contains 'listings', we can map that to 'tabular_data'.
+                tabular_data = [] # Default to empty list
+                if isinstance(structured_data, list):
+                    # If structured_data is already a list, use it directly
+                    tabular_data = structured_data
+                elif isinstance(structured_data, dict):
+                    # Check for a "listings" key
+                    if "listings" in structured_data and isinstance(structured_data.get("listings"), list):
+                        tabular_data = structured_data["listings"]
+                    else:
+                        # Try to find another key that holds a list of dicts (potential items)
+                        found_list_in_dict = False
+                        for key, value in structured_data.items():
+                            if isinstance(value, list) and len(value) > 0 and isinstance(value[0], dict):
+                                # Heuristic: if items in this list seem to match the requested fields, use this list
+                                # Or if no fields were specified (e.g. "all"), take the first list of dicts.
+                                if not fields or all(f in value[0] for f in fields):
+                                    tabular_data = value
+                                    found_list_in_dict = True
+                                    break
+                        if not found_list_in_dict:
+                            # If no specific list of items found, and the structured_data dict itself matches the fields,
+                            # treat the entire dict as a single-item list.
+                            if not fields or all(f in structured_data for f in fields):
+                                tabular_data = [structured_data]
+                            # else:
+                                # If the dict doesn't match fields and no inner list was suitable,
+                                # tabular_data remains empty. A warning could be logged here.
+                                # print(f"Warning: LLM output (execute_scrape) is a dict but couldn't find a clear list of items or direct field matches for fields: {fields}. Structured data: {structured_data}")
+                # If structured_data is not a list or dict, tabular_data remains []
+
+            else: # This 'else' corresponds to 'if parsed_results_list and parsed_results_list[0].get("parsed_data")'
+                structured_data = {"error": "Failed to parse structured data with new scraper."}
+                tabular_data = []
+
         except Exception as e:
-            print(f"Error structuring scraped data: {e}")
-            # Create a basic structured data object if structuring fails
-            structured_data = {
-                "tabular_data": [{"content": markdown_content}]
-            }
+            if project_url_entry:
+                supabase.table("project_urls").update({"status": "failed"}).eq("id", project_url_entry["id"]).execute()
+            print(f"Error structuring data with new scraper: {e}")
+            structured_data = {"error": f"LLM parsing failed: {str(e)}", "raw_markdown_preview": markdown_content[:500]}
+            tabular_data = []
+        
+        # format_data_for_display is from old text_processing, may need replacement or adaptation
+        # For now, let's create a simplified formatted_data or pass raw tabular_data
+        # The Scrape_Master streamlit app handles display directly from the structured JSON.
+        # Use the format_data_for_display utility to prepare the formatted_data dictionary
+        formatted_data = await format_data_for_display(
+            tabular_data=tabular_data,
+            fields=fields,
+            display_format=display_format,
+            full_markdown_content=markdown_content
+        )
 
-        # Create a new scrape session
-        # Ensure session_id is a valid UUID
-        try:
-            # Try to parse the session_id as a UUID
-            uuid_obj = UUID(session_id)
-            session_id_str = str(uuid_obj)
-        except ValueError:
-            # If it's not a valid UUID, generate a new one
-            session_id_str = str(uuid4())
-            print(f"Invalid UUID format for session_id: {session_id}, using generated UUID: {session_id_str}")
+        # Clean up environment variables if set
+        if api_keys:
+            for key_name in api_keys.keys():
+                if key_name.upper() in os.environ:
+                    del os.environ[key_name.upper()]
 
-        # Extract fields from conditions
-        fields = [field.strip() for field in conditions.split(',')] if conditions else []
-
-        # Get tabular data from structured data
-        tabular_data = structured_data.get("tabular_data", [])
-
-        # Format data for display based on the specified format
-        formatted_data = await format_data_for_display(tabular_data, fields, display_format)
-
+        # Create new scrape session
         session_data = {
-            "id": session_id_str,
+            "id": current_session_id,
             "project_id": str(project_id),
             "url": current_page_url,
             "raw_markdown": markdown_content,
             "structured_data_json": json.dumps(structured_data),
-            "status": "scraped",
+            "status": "scraped", # This status is for the session itself
             "display_format": display_format,
-            "formatted_tabular_data": json.dumps(formatted_data)
+            "formatted_tabular_data": json.dumps(formatted_data),
+            # unique_scrape_identifier will be generated by Supabase trigger or set if needed
         }
-
+        
         session_response = supabase.table("scrape_sessions").insert(session_data).execute()
         if not session_response.data:
+            if project_url_entry:
+                supabase.table("project_urls").update({"status": "failed"}).eq("id", project_url_entry["id"]).execute()
             raise HTTPException(status_code=500, detail="Failed to create scrape session")
+        
+        created_session = session_response.data[0]
 
-        session = session_response.data[0]
+        # Update project_urls with the new session_id and status
+        if project_url_entry:
+            supabase.table("project_urls").update({
+                "last_scraped_session_id": created_session["id"],
+                "status": "processing_rag" if rag_enabled_for_url else "completed", # Set to processing_rag or completed
+                "display_format": display_format # Also update display_format
+            }).eq("id", project_url_entry["id"]).execute()
 
-        # If RAG is enabled, process the scraped content in the background
         embedding_cost = 0.0
-        if rag_enabled:
-            # Check if Azure OpenAI credentials are provided
-            if not api_keys:
-                raise HTTPException(status_code=400, detail="Azure OpenAI credentials are required for RAG processing. Please configure your API key and endpoint in the frontend Settings.")
+        rag_status_message = "RAG not enabled for this URL."
+
+        if rag_enabled_for_url:
+            rag_status_message = "Processing for RAG"
+            if not api_keys or 'api_key' not in api_keys or not api_keys.get('api_key') or 'endpoint' not in api_keys or not api_keys.get('endpoint'):
+                if project_url_entry:
+                    supabase.table("project_urls").update({"status": "failed"}).eq("id", project_url_entry["id"]).execute()
+                raise HTTPException(status_code=400, detail="Azure OpenAI credentials are required for RAG processing.")
+
+            embedding_api_keys = {**api_keys, "deployment_name": AZURE_EMBEDDING_MODEL}
             
-            if 'api_key' not in api_keys or not api_keys.get('api_key'):
-                raise HTTPException(status_code=400, detail="Azure OpenAI API key is missing. Please set your API key in the frontend Settings.")
-                
-            if 'endpoint' not in api_keys or not api_keys.get('endpoint'):
-                raise HTTPException(status_code=400, detail="Azure OpenAI endpoint is missing. Please set your endpoint URL in the frontend Settings.")
+            # Pass project_url_entry_id to RAG service for status updates
+            project_url_id_for_rag = project_url_entry["id"] if project_url_entry else None
 
-            # Ensure the correct embedding model is used
-            embedding_api_keys = {
-                **api_keys,
-                "deployment_name": AZURE_EMBEDDING_MODEL
-            }
-
-            # Process the scraped content in the background
             background_tasks.add_task(
                 self.rag_service.ingest_scraped_content,
                 project_id,
-                session["id"],
+                created_session["id"],
                 markdown_content,
                 embedding_api_keys,
-                structured_data  # Pass structured data for focused RAG ingestion
+                structured_data,
+                project_url_id_for_rag # Pass the ID of the project_urls entry
             )
-            session_status = "Processing for RAG"
-
-            # Calculate approximate embedding cost
-            # Azure OpenAI embedding costs approximately $0.0001 per 1K tokens
-            # A simple approximation: 1 token ≈ 4 characters
             num_tokens = len(markdown_content) / 4
             embedding_cost = (num_tokens / 1000) * 0.0001
-        else:
-            session_status = "Scraped"
+        else: # RAG not enabled for URL
+            if project_url_entry: # Ensure status is 'completed' if RAG is not run
+                 supabase.table("project_urls").update({"status": "completed"}).eq("id", project_url_entry["id"]).execute()
 
-        # Generate download links
+
         download_links = {
-            "json": f"/download/{project_id}/{session['id']}/json",
-            "csv": f"/download/{project_id}/{session['id']}/csv"
+            "json": f"/download/{project_id}/{created_session['id']}/json",
+            "csv": f"/download/{project_id}/{created_session['id']}/csv",
+            "pdf": f"/download/{project_id}/{created_session['id']}/pdf"
         }
-
-        # No need to extract fields and tabular data again, already done above
-
-        # We'll store the display format in the session data for now
-        # since the project_urls table might not exist yet
-        try:
-            # Try to update project_urls table if it exists
-            try:
-                # Check if the URL exists in project_urls
-                project_url_response = supabase.table("project_urls").select("*").eq("project_id", str(project_id)).eq("url", current_page_url).execute()
-
-                if project_url_response.data:
-                    # Update existing entry
-                    supabase.table("project_urls").update({
-                        "conditions": conditions,
-                        "display_format": display_format
-                    }).eq("project_id", str(project_id)).eq("url", current_page_url).execute()
-                else:
-                    # Insert new entry
-                    supabase.table("project_urls").insert({
-                        "project_id": str(project_id),
-                        "url": current_page_url,
-                        "conditions": conditions,
-                        "display_format": display_format
-                    }).execute()
-            except Exception as e:
-                print(f"Warning: Could not update project_urls table: {e}")
-                print("This is expected if the table doesn't exist yet.")
-
-            # Store display format and formatted tabular data in the session data
-            supabase.table("scrape_sessions").update({
-                "display_format": display_format,
-                "formatted_tabular_data": json.dumps(formatted_data)
-            }).eq("id", session_id_str).execute()
-
-        except Exception as e:
-            print(f"Error updating session data: {e}")
-
-        # Add PDF download link
-        download_links["pdf"] = f"/download/{project_id}/{session['id']}/pdf"
 
         return ExecuteScrapeResponse(
             status="success",
-            message=f"Page {current_page_url} scraped successfully using Crawl4AI framework.",
+            message=f"Page {current_page_url} scraped. Status: {rag_status_message}",
             download_links=download_links,
-            rag_status=session_status,
+            rag_status=rag_status_message,
             embedding_cost_if_any=embedding_cost,
             tabular_data=tabular_data,
             fields=fields,

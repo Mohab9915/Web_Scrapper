@@ -4,8 +4,8 @@ API endpoints for web cache management.
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import Dict, Any
 
-from app.utils.firecrawl_api import get_cache_stats
-from app.models.web_cache import WebCacheStats
+from ..utils.firecrawl_api import get_cache_stats
+from ..models.web_cache import WebCacheStats
 
 router = APIRouter(tags=["cache"])
 

@@ -5,11 +5,11 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from app.api import projects, scraping, rag, websockets, cache, project_urls, history
-from app.config import settings
+from .api import projects, scraping, rag, websockets, cache, project_urls, history, project_settings
+from .config import settings
 # Import diagnostics separately to avoid module not found errors
 try:
-    from app.api import diagnostics
+    from .api import diagnostics
 except ImportError:
     print("Warning: Diagnostics module not available")
 
@@ -36,6 +36,7 @@ app.include_router(websockets.router, prefix=settings.API_V1_STR)
 app.include_router(cache.router, prefix=settings.API_V1_STR)
 app.include_router(project_urls.router, prefix=settings.API_V1_STR)
 app.include_router(history.router, prefix=settings.API_V1_STR)
+app.include_router(project_settings.router, prefix=settings.API_V1_STR, tags=["Project Settings"])
 
 # Include diagnostics router if available
 try:

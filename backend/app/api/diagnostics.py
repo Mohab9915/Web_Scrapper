@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends
 from typing import Dict, Any
 
 # Import the system resource checker
-from app.utils.system_check import check_system_resources
+from ..utils.system_check import check_system_resources
 
 # Create a router
 router = APIRouter(prefix="/diagnostics", tags=["diagnostics"])

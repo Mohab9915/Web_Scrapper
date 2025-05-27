@@ -7,8 +7,8 @@ import httpx
 import asyncio
 from math import ceil
 
-from app.utils.firecrawl_api import AZURE_EMBEDDING_MODEL, AZURE_CHAT_MODEL
-from app.config import settings
+from ..scraper_modules.assets import AZURE_EMBEDDING_MODEL, AZURE_CHAT_MODEL # Corrected path
+from ..config import settings
 
 async def generate_embeddings(text: str, azure_credentials: Optional[Dict[str, str]] = None) -> List[float]:
     """

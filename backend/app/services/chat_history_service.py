@@ -6,8 +6,8 @@ from uuid import UUID, uuid4
 from datetime import datetime
 from fastapi import HTTPException
 
-from app.database import supabase
-from app.models.chat import ChatMessageResponse
+from ..database import supabase
+from ..models.chat import ChatMessageResponse
 
 
 class ChatHistoryService:

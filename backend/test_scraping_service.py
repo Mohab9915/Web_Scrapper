@@ -47,7 +47,7 @@ os.environ['SUPABASE_URL'] = 'https://example.supabase.co'
 os.environ['SUPABASE_KEY'] = 'mock_key'
 
 # Now import the modules
-from app.utils.crawl4ai_crawler import scrape_url, extract_structured_data
+# from app.utils.crawl4ai_crawler import scrape_url, extract_structured_data # Commented out due to deletion
 from app.services.scraping_service import ScrapingService
 
 async def test_scrape_url():

@@ -9,11 +9,11 @@ import json
 import httpx
 import numpy as np
 from datetime import datetime
-from app.utils.embedding import generate_embeddings
-from app.database import supabase
-from app.models.chat import RAGQueryResponse, ChatMessageResponse
-from app.utils.firecrawl_api import AZURE_CHAT_MODEL
-from app.services.chat_history_service import ChatHistoryService
+from ..utils.embedding import generate_embeddings
+from ..database import supabase
+from ..models.chat import RAGQueryResponse, ChatMessageResponse
+from ..scraper_modules.assets import AZURE_CHAT_MODEL # Corrected path
+from .chat_history_service import ChatHistoryService # Corrected relative import
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -241,10 +241,15 @@ class ImprovedRAGService:
         if not project_response.data:
             raise Exception("Project not found")
         if not project_response.data["rag_enabled"]:
-            raise Exception("RAG is not enabled for this project")
+            raise Exception("RAG is not enabled for this project") # This could also return a RAGQueryResponse
         sessions_response = supabase.table("scrape_sessions").select("unique_scrape_identifier").eq("project_id", str(project_id)).eq("status", "rag_ingested").execute()
         if not sessions_response.data:
-            raise Exception("No RAG-processed data available for this project")
+            logger.warning(f"No RAG-processed data available for project {project_id} when querying.")
+            return RAGQueryResponse(
+                answer="No RAG-processed data is currently available for this project. Please ensure content has been scraped and RAG ingestion is complete.",
+                generation_cost=0.0,
+                source_documents=[]
+            )
         unique_names = [session["unique_scrape_identifier"] for session in sessions_response.data]
         query_embedding = await generate_embeddings(query, azure_credentials)
         is_obvious = self._is_obvious_question(query)

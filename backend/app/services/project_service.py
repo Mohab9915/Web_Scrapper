@@ -5,8 +5,8 @@ from typing import List, Optional
 from uuid import UUID
 from fastapi import Depends
 
-from app.database import supabase
-from app.models.project import ProjectCreate, ProjectUpdate, ProjectResponse
+from ..database import supabase
+from ..models.project import ProjectCreate, ProjectUpdate, ProjectResponse
 
 class ProjectService:
     """Service for project management."""

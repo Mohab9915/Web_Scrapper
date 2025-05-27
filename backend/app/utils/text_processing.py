@@ -7,7 +7,7 @@ import httpx
 from typing import List, Dict, Any, Optional
 import tiktoken
 
-from app.utils.crawl4ai_crawler import AZURE_CHAT_MODEL
+from ..scraper_modules.assets import AZURE_CHAT_MODEL # Changed to relative import
 
 async def structure_scraped_data(
     markdown_content: str,
@@ -131,51 +131,54 @@ async def chunk_text(text: str, chunk_size: int = 1000, overlap: int = 200) -> L
 async def format_data_for_display(
     tabular_data: List[Dict[str, Any]],
     fields: List[str],
-    display_format: str
+    display_format: str, # This argument is kept for consistency but less used if tabular_data is empty
+    full_markdown_content: Optional[str] = None # Added full_markdown_content
 ) -> Dict[str, Any]:
     """
     Format tabular data for display based on the specified format.
+    If tabular_data is empty, provides fallbacks using full_markdown_content for raw view.
 
     Args:
         tabular_data (List[Dict[str, Any]]): Tabular data to format
         fields (List[str]): List of fields in the data
         display_format (str): Display format ('table', 'paragraph', or 'raw')
+        full_markdown_content (Optional[str]): Full raw markdown content of the page
 
     Returns:
         Dict[str, Any]: Formatted data
     """
-    if not tabular_data:
-        return {
-            "table_data": [],
-            "paragraph_data": "",
-            "raw_data": ""
-        }
-
-    # Format data for table view (already in the right format)
-    table_data = tabular_data
-
-    # Format data for paragraph view
+    table_data = tabular_data if tabular_data else []
     paragraph_data = ""
-    for i, row in enumerate(tabular_data):
-        paragraph_data += f"Item {i+1}:\n"
-        for field in fields:
-            if field in row and row[field]:
-                paragraph_data += f"{field.capitalize()}: {row[field]}\n"
-        paragraph_data += "\n"
-
-    # Format data for raw view
     raw_data = ""
-    for i, row in enumerate(tabular_data):
-        raw_data += f"--- Item {i+1} ---\n"
-        for field, value in row.items():
-            if value:
-                raw_data += f"{field}: {value}\n"
-        raw_data += "\n"
 
+    if tabular_data:
+        # Format data for paragraph view
+        for i, row in enumerate(tabular_data):
+            paragraph_data += f"Item {i+1}:\n"
+            for field_name in fields: # Iterate using fields to maintain order and selection
+                if field_name in row and row[field_name]:
+                    paragraph_data += f"{field_name.capitalize()}: {row[field_name]}\n"
+            paragraph_data += "\n"
+
+        # Format data for raw view (structured items)
+        for i, row in enumerate(tabular_data):
+            raw_data += f"--- Item {i+1} ---\n"
+            for field_name, value in row.items(): # Show all extracted fields for each item in raw
+                if value:
+                    raw_data += f"{field_name}: {value}\n"
+            raw_data += "\n"
+    else:
+        # No tabular data extracted
+        paragraph_data = "No structured items were extracted from the content."
+        if full_markdown_content:
+            raw_data = f"---\nNOTE: No structured items were extracted. Displaying full raw markdown content as fallback.\n---\n\n{full_markdown_content}"
+        else:
+            raw_data = "No structured items were extracted, and no raw markdown content is available."
+            
     return {
-        "table_data": table_data,
-        "paragraph_data": paragraph_data,
-        "raw_data": raw_data
+        "table_data": table_data, # This will be an empty list if tabular_data was empty
+        "paragraph_data": paragraph_data.strip(),
+        "raw_data": raw_data.strip()
     }
 
 async def extract_data_with_regex(
@@ -249,31 +252,49 @@ async def extract_data_with_regex(
             row[field] = combined_data.get(field, "")
         tabular_data.append(row)
 
-    # If we couldn't extract structured data, create a simple table with ONLY the requested fields
-    if not tabular_data:
-        # Create a fallback row with ONLY the requested fields
-        row = {}
-        for field in fields:
-            # Only add fields that were explicitly requested
-            if field == "title" and "title" in fields:
-                row[field] = title
-            elif (field == "content" or field == "description") and field in fields:
-                # Get the first paragraph of content
-                paragraphs = [p for p in markdown_content.split('\n\n') if p.strip()]
-                if paragraphs and len(paragraphs) > 1:
-                    row[field] = paragraphs[1].strip()  # Skip the title paragraph
-            else:
-                # Only add the field if it was explicitly requested
-                if field in fields:
-                    row[field] = ""
+    # If we couldn't extract structured data from sections, bullets, or general regex,
+    # and fields were specified, create a fallback row.
+    # This ensures that the requested fields are represented, even if mostly empty.
+    if not tabular_data and fields:
+        fallback_row = {field: "" for field in fields} # Initialize all requested fields to empty
 
-        # Only add the row if it has at least one non-empty value, contains ONLY the requested fields,
-        # and the extracted values are meaningful (not just empty strings or generic content)
-        meaningful_values = [v for v in row.values() if v and v.strip() and len(v.strip()) > 3]
-        if (len(meaningful_values) >= len(fields) * 0.5 and  # At least 50% of fields have meaningful values
-            all(field in fields for field in row.keys()) and
-            any(value for value in row.values())):
-            tabular_data.append(row)
+        if "title" in fields: # 'fields' are already lowercased
+            fallback_row["title"] = title
+
+        # Provide a generic content snippet if 'content' or 'description' is requested
+        # and not already populated by more specific regex matches (which would have put data in combined_data)
+        requested_content_field = None
+        if "content" in fields:
+            requested_content_field = "content"
+        elif "description" in fields:
+            requested_content_field = "description"
+        
+        if requested_content_field and not combined_data.get(requested_content_field): # Check if not already found
+            # Try to get a summary from the main content, avoiding just the title
+            content_paragraphs = [p.strip() for p in markdown_content.split('\n\n') if p.strip()]
+            if content_paragraphs:
+                # Find first non-title paragraph if possible
+                first_content_paragraph = ""
+                for p_idx, para in enumerate(content_paragraphs):
+                    if not para.startswith("#"): # Simple check to avoid title lines
+                        first_content_paragraph = para
+                        break
+                    elif p_idx == 0 and para.lower().strip("# ").strip() == title.lower(): # If first para is title
+                        continue 
+                
+                if not first_content_paragraph and len(content_paragraphs) > 1: # Fallback if title was complex
+                    first_content_paragraph = content_paragraphs[1] if content_paragraphs[0].lower().strip("# ").strip() == title.lower() else content_paragraphs[0]
+
+                if first_content_paragraph:
+                     fallback_row[requested_content_field] = (first_content_paragraph[:250] + '...') if len(first_content_paragraph) > 250 else first_content_paragraph
+                elif title != "Untitled": # If no other content, use title as a last resort for description/content
+                    fallback_row[requested_content_field] = f"Content related to: {title}"
+                else:
+                    fallback_row[requested_content_field] = "No distinct content found."
+
+        # Ensure only requested fields are in the fallback_row before appending
+        final_fallback_row = {f: fallback_row.get(f, "") for f in fields}
+        tabular_data.append(final_fallback_row)
 
     return tabular_data
 

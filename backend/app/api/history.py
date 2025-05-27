@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List
 from uuid import UUID
 
-from app.services.scraping_service import ScrapingService
+from ..services.scraping_service import ScrapingService
 
 router = APIRouter(tags=["history"])
 

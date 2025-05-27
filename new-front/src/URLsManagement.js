@@ -13,6 +13,7 @@ function URLManagementPanel({
   errorMessage,
   onOpenSettings,
   projectName,
+  onUpdateDisplayFormat, // Added new prop
 }) {
   const [newUrl, setNewUrl] = useState('');
   const [newCondition, setNewCondition] = useState('');
@@ -339,16 +340,13 @@ function URLManagementPanel({
                         <select
                           value={result.display_format || 'table'}
                           onChange={(e) => {
-                            // Update the display format for this result
-                            const updatedResults = [...scrapingResults];
-                            updatedResults[resultIndex].display_format = e.target.value;
-                            // This would normally update the state in the parent component
-                            // For now, we'll just update the UI
-                            document.getElementById(`display-format-${resultIndex}`).setAttribute('data-format', e.target.value);
+                            if (onUpdateDisplayFormat) {
+                              onUpdateDisplayFormat(resultIndex, e.target.value);
+                            }
                           }}
                           className="bg-indigo-800 border border-indigo-600 text-indigo-200 text-sm rounded-md p-1"
                           id={`display-format-${resultIndex}`}
-                          data-format={result.display_format || 'table'}
+                          // data-format attribute is no longer needed as state will drive the view
                         >
                           <option value="table">Table View</option>
                           <option value="paragraph">Paragraph View</option>
@@ -356,63 +354,93 @@ function URLManagementPanel({
                         </select>
                       </div>
 
-                      {/* Table View */}
-                      {result.display_format === 'table' && result.tabularData && result.tabularData.length > 0 && result.fields && result.fields.length > 0 && (
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="text-indigo-300 border-b border-indigo-700">
-                              <th className="text-left py-1 px-2">#</th>
-                              {result.fields.map((field, idx) => (
-                                <th key={idx} className="text-left py-1 px-2">{field}</th>
-                              ))}
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {result.tabularData.map((row, rowIdx) => (
-                              <tr key={rowIdx} className="border-b border-indigo-800 text-indigo-200">
-                                <td className="py-1 px-2">{rowIdx + 1}</td>
-                                {result.fields.map((field, colIdx) => (
-                                  <td key={colIdx} className="py-1 px-2">{row[field] || ''}</td>
+                      {/* Table View Logic */}
+                      {result.display_format === 'table' ? (
+                        <>
+                          {result.tabularData && result.tabularData.length > 0 && result.fields && result.fields.length > 0 ? (
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="text-indigo-300 border-b border-indigo-700">
+                                  <th className="text-left py-1 px-2">#</th>
+                                  {result.fields.map((field, idx) => (
+                                    <th key={idx} className="text-left py-1 px-2">{field}</th>
+                                  ))}
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {result.tabularData.map((row, rowIdx) => (
+                                  <tr key={rowIdx} className="border-b border-indigo-800 text-indigo-200">
+                                    <td className="py-1 px-2">{rowIdx + 1}</td>
+                                    {result.fields.map((field, colIdx) => (
+                                      <td key={colIdx} className="py-1 px-2">{row[field] || ''}</td>
+                                    ))}
+                                  </tr>
                                 ))}
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      )}
+                              </tbody>
+                            </table>
+                          ) : result.results && result.results.length > 0 ? (
+                            // Fallback to single-row summary (result.results)
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="text-indigo-300 border-b border-indigo-700">
+                                  <th className="text-left py-1 px-2">Field</th>
+                                  <th className="text-left py-1 px-2">Value</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {result.results.map((item, idx) => (
+                                  <tr key={idx} className="border-b border-indigo-800 text-indigo-200">
+                                    <td className="py-1 px-2 font-medium">{item.title}</td>
+                                    <td className="py-1 px-2">{item.value}</td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          ) : result.structuredData && typeof result.structuredData === 'object' && Object.keys(result.structuredData).length > 0 ? (
+                            // Fallback to rendering raw structuredData as key-value pairs
+                            <table className="w-full text-sm">
+                              <thead>
+                                <tr className="text-indigo-300 border-b border-indigo-700">
+                                  <th className="text-left py-1 px-2">Field</th>
+                                  <th className="text-left py-1 px-2">Value</th>
+                                </tr>
+                              </thead>
+                              <tbody>
+                                {Object.entries(result.structuredData).map(([key, value], idx) => (
+                                  (typeof value !== 'object' || value === null || Array.isArray(value)) && /* Avoid rendering complex nested objects directly in table cell */
+                                  <tr key={idx} className="border-b border-indigo-800 text-indigo-200">
+                                    <td className="py-1 px-2 font-medium">{key}</td>
+                                    <td className="py-1 px-2 whitespace-pre-wrap">
+                                      {value === null ? 'null' : Array.isArray(value) ? JSON.stringify(value) : String(value)}
+                                    </td>
+                                  </tr>
+                                ))}
+                              </tbody>
+                            </table>
+                          ) : (
+                            <p className="text-indigo-300 text-sm">No data extracted for table view.</p>
+                          )}
+                        </>
+                      ) : null}
 
                       {/* Paragraph View */}
-                      {result.display_format === 'paragraph' && result.formatted_data && result.formatted_data.paragraph_data && (
+                      {result.display_format === 'paragraph' && result.formatted_data && result.formatted_data.paragraph_data ? (
                         <div className="text-indigo-200 whitespace-pre-wrap font-mono text-sm p-2">
                           {result.formatted_data.paragraph_data}
                         </div>
-                      )}
+                      ) : result.display_format === 'paragraph' ? (
+                         <p className="text-indigo-300 text-sm">No data formatted for paragraph view.</p>
+                      ): null}
 
                       {/* Raw View */}
-                      {result.display_format === 'raw' && result.formatted_data && result.formatted_data.raw_data && (
+                      {result.display_format === 'raw' && result.formatted_data && result.formatted_data.raw_data ? (
                         <div className="text-indigo-200 whitespace-pre-wrap font-mono text-sm p-2 bg-indigo-950 rounded">
                           {result.formatted_data.raw_data}
                         </div>
-                      )}
-
-                      {/* Fallback table - show only when there's actual scraped content */}
-                      {result.display_format === 'table' && (!result.tabularData || result.tabularData.length === 0) && result.results && result.results.length > 0 && (
-                        <table className="w-full text-sm">
-                          <thead>
-                            <tr className="text-indigo-300 border-b border-indigo-700">
-                              <th className="text-left py-1 px-2">Field</th>
-                              <th className="text-left py-1 px-2">Value</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            {result.results.map((item, idx) => (
-                              <tr key={idx} className="border-b border-indigo-800 text-indigo-200">
-                                <td className="py-1 px-2 font-medium">{item.title}</td>
-                                <td className="py-1 px-2">{item.value}</td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      )}
+                      ) : result.display_format === 'raw' ? (
+                        <p className="text-indigo-300 text-sm">No data formatted for raw view.</p>
+                      ) : null}
+                      
                       <div className="flex flex-wrap gap-2 mt-3">
                         <button
                           onClick={() => downloadAsCSV(

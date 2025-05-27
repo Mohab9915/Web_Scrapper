@@ -19,9 +19,9 @@ class ScrapedSessionResponse(ScrapedSessionBase):
     """Model for scraped session response."""
     id: UUID
     project_id: UUID
-    scraped_at: datetime
+    scraped_at: Optional[datetime] = None # Made Optional to handle potential NULLs from DB
     status: str  # 'Scraped', 'Embedded for RAG', 'Error'
-    markdown_content: Optional[str] = None
+    markdown_content: Optional[str] = Field(default=None, alias="raw_markdown") # Aliased from raw_markdown
     structured_data: Optional[Dict[str, Any]] = None
     download_link_json: Optional[str] = None
     download_link_csv: Optional[str] = None

@@ -5,8 +5,8 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List
 from uuid import UUID
 
-from app.models.project import ProjectCreate, ProjectUpdate, ProjectResponse
-from app.services.project_service import ProjectService
+from ..models.project import ProjectCreate, ProjectUpdate, ProjectResponse
+from ..services.project_service import ProjectService
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 

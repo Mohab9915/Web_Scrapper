@@ -17,7 +17,7 @@ os.environ['SUPABASE_KEY'] = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzd
 sys.path.append('/home/mohab/Downloads/studio-master_backup/studio-master/backend')
 
 # Import the modules
-from app.utils.crawl4ai_crawler import scrape_url, extract_structured_data
+# from app.utils.crawl4ai_crawler import scrape_url, extract_structured_data # Commented out due to deletion
 
 async def test_scrape_url():
     """Test the scrape_url function."""

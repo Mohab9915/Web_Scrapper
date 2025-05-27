@@ -11,9 +11,9 @@ from datetime import datetime, timedelta, timezone
 from dotenv import load_dotenv
 from fastapi import HTTPException
 
-from app.database import supabase
-from app.config import settings
-from app.utils.logging_utils import (
+from ..database import supabase
+from ..config import settings
+from .logging_utils import ( # logging_utils is in the same 'utils' directory
     get_correlation_id,
     log_firecrawl_request,
     log_firecrawl_response,

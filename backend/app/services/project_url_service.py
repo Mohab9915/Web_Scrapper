@@ -5,8 +5,8 @@ from typing import List, Optional
 from uuid import UUID
 from fastapi import Depends, HTTPException
 
-from app.database import supabase
-from app.models.project_url import ProjectUrlCreate, ProjectUrlUpdate, ProjectUrlResponse
+from ..database import supabase
+from ..models.project_url import ProjectUrlCreate, ProjectUrlUpdate, ProjectUrlResponse
 
 class ProjectUrlService:
     """Service for project URL management."""
@@ -72,7 +72,8 @@ class ProjectUrlService:
             # Update existing URL
             response = supabase.table("project_urls").update({
                 "conditions": project_url.conditions,
-                "display_format": project_url.display_format
+                "display_format": project_url.display_format,
+                "rag_enabled": project_url.rag_enabled  # Added rag_enabled
             }).eq("project_id", str(project_url.project_id)).eq("url", project_url.url).execute()
         else:
             # Create new URL
@@ -80,7 +81,8 @@ class ProjectUrlService:
                 "project_id": str(project_url.project_id),
                 "url": project_url.url,
                 "conditions": project_url.conditions,
-                "display_format": project_url.display_format
+                "display_format": project_url.display_format,
+                "rag_enabled": project_url.rag_enabled  # Added rag_enabled
             }).execute()
 
         # Return created/updated URL

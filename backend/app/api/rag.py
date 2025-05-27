@@ -6,9 +6,9 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List, Dict, Optional
 from uuid import UUID
 
-from app.models.chat import ChatMessageResponse, ChatMessageCreate, ChatMessageRequest, RAGQueryRequest, RAGQueryResponse
-from app.services.improved_rag_service import ImprovedRAGService as RAGService
-from app.services.chat_history_service import ChatHistoryService
+from ..models.chat import ChatMessageResponse, ChatMessageCreate, ChatMessageRequest, RAGQueryRequest, RAGQueryResponse
+from ..services.improved_rag_service import ImprovedRAGService as RAGService
+from ..services.chat_history_service import ChatHistoryService
 
 router = APIRouter(tags=["rag"])
 

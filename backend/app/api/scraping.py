@@ -5,11 +5,11 @@ from fastapi import APIRouter, Depends, HTTPException, status, BackgroundTasks
 from typing import List
 from uuid import UUID
 
-from app.models.scrape_session import (
+from ..models.scrape_session import (
     ScrapedSessionResponse, InteractiveScrapingInitiate,
     InteractiveScrapingResponse, ExecuteScrapeRequest, ExecuteScrapeResponse
 )
-from app.services.scraping_service import ScrapingService
+from ..services.scraping_service import ScrapingService
 
 router = APIRouter(tags=["scraping"])
 

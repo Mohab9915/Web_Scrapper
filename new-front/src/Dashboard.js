@@ -77,7 +77,7 @@ function WebScrapingDashboard() {
     };
 
     fetchProjects();
-  }, []); // Only run once when component mounts
+  }, [projects, activeProjectId]); // Added projects, activeProjectId as per eslint, though fetchProjects itself doesn't use them directly, its internal logic might if activeProjectId is set.
 
   // Load chat data when active project changes
   useEffect(() => {
@@ -92,7 +92,7 @@ function WebScrapingDashboard() {
           }));
           
           // If there's no current conversation but there are conversations, select the first one
-          if (projectConversations && projectConversations.length > 0 && !currentConversationId) {
+          if (projectConversations && projectConversations.length > 0 && !currentConversationId) { // currentConversationId is used
             setCurrentConversationId(projectConversations[0].id);
           }
         } catch (error) {
@@ -106,17 +106,17 @@ function WebScrapingDashboard() {
     };
     
     loadData();
-  }, [activeProjectId]);
+  }, [activeProjectId, currentConversationId]); // Added currentConversationId
 
   // Load messages when conversation changes
   useEffect(() => {
     if (activeProjectId && currentConversationId) {
       console.log('Conversation ID changed, loading messages for:', currentConversationId);
-      loadChatMessages(currentConversationId);
+      loadChatMessages(currentConversationId); // loadChatMessages is a dependency
     } else {
       setChatMessages([]);
     }
-  }, [activeProjectId, currentConversationId]);
+  }, [activeProjectId, currentConversationId, loadChatMessages]); // Added loadChatMessages
 
   const [activeTab, setActiveTab] = useState('projects');
   const [selectedAiModel, setSelectedAiModel] = useState('gpt-4o-mini');
@@ -270,57 +270,68 @@ function WebScrapingDashboard() {
       const scrapingResults = [];
       // IMPORTANT: Don't create history entries here to avoid recreating deleted history items
 
-      // Process each session
-      sessions.forEach((session) => {
-        // Find matching project URL if it exists
-        const matchingUrl = projectUrls.find(url => url.url === session.url);
+      // Process each projectUrlItem (which might have latest_scrape_data)
+      sessions.forEach((projectUrlItem) => {
+        const latestScrapeData = projectUrlItem.latest_scrape_data;
 
-        // Get conditions and display format from matching URL or use defaults
-        const conditions = matchingUrl ? matchingUrl.conditions : "title, description, price, content";
-        const displayFormat = matchingUrl ? matchingUrl.display_format : "table";
+        // Conditions and display_format come from the projectUrlItem itself
+        const conditions = projectUrlItem.conditions || "title, description, price, content";
+        const displayFormatFromProjectUrl = projectUrlItem.display_format || "table";
 
-        // Try to parse structured data from session (simplified)
-        let structuredData = session.structured_data || {};
+        if (!latestScrapeData) {
+          // No actual scrape session data, create a placeholder entry for the URL
+          const emptyResultEntry = {
+            url: projectUrlItem.url,
+            conditions: conditions,
+            results: [], // No simplified results
+            tabularData: [], // No tabular data
+            fields: conditions.split(',').map(f => f.trim()), // Fields from conditions
+            display_format: displayFormatFromProjectUrl,
+            structuredData: {}, // Empty structured data
+            project_id: projectId,
+            session_id: null, // No session ID
+            error: "No scrape data available for this URL."
+          };
+          scrapingResults.push(emptyResultEntry);
+          return; // Next projectUrlItem
+        }
 
-        // If no structured data, try to extract from raw_markdown
-        if (Object.keys(structuredData).length === 0 && session.raw_markdown) {
+        // If latestScrapeData exists, use its properties
+        let structuredData = latestScrapeData.structured_data || {};
+        
+        // Fallback: if structuredData is empty and raw_markdown exists, try basic extraction
+        // This should ideally be a last resort or handled by ensuring LLM always returns something, even if empty fields.
+        if (Object.keys(structuredData).length === 0 && latestScrapeData.raw_markdown) {
           try {
-            const markdown = session.raw_markdown;
-            // Simple extraction of title
+            const markdown = latestScrapeData.raw_markdown;
             const titleMatch = markdown.match(/# (.*)/);
             if (titleMatch) structuredData.title = titleMatch[1];
-
-            // Extract price if available
             const priceMatch = markdown.match(/\$(\d+(\.\d+)?)/);
             if (priceMatch) structuredData.price = priceMatch[1];
-
-            // Extract description if available
             const descriptionMatch = markdown.match(/## Description\s+(.*?)(\n##|\n$)/s);
             if (descriptionMatch) structuredData.description = descriptionMatch[1].trim();
           } catch (e) {
-            console.error('Error extracting data from markdown:', e);
+            console.error('Error extracting data from markdown fallback:', e);
           }
         }
 
-        // Use tabular_data from the backend if available, otherwise create it
-        // --- FIX: Always map tabular_data to tabularData for frontend ---
-        const tabularData = session.tabular_data || [structuredData];
-        // --- FIX: Always map fields from session.fields or conditions ---
-        const fields = session.fields || conditions.split(',').map(field => field.trim());
-        // --- FIX: Always map display_format from session or default ---
-        const display_format = session.display_format || displayFormat;
-        // --- FIX: Always map formatted_tabular_data to formatted_data ---
-        const formatted_data = session.formatted_tabular_data || null;
+        // Data from the ScrapedSessionResponse (latestScrapeData)
+        const tabularData = latestScrapeData.tabular_data || (Object.keys(structuredData).length > 0 ? [structuredData] : []);
+        const fields = latestScrapeData.fields && latestScrapeData.fields.length > 0 
+                       ? latestScrapeData.fields 
+                       : conditions.split(',').map(field => field.trim());
+        const display_format = latestScrapeData.display_format || displayFormatFromProjectUrl;
+        const formatted_data = latestScrapeData.formatted_tabular_data || null; // This is for paragraph/raw views
 
-        // Create formatted results (simplified)
+        // Create formatted results (simplified single-row summary for potential fallback display)
         const formattedResults = fields
           .filter(field => {
             // Check if the field exists in the first row of tabular data
-            return tabularData.length > 0 && tabularData[0][field];
+            return tabularData.length > 0 && tabularData[0] && typeof tabularData[0] === 'object' && tabularData[0][field];
           })
           .map(field => ({
             title: field,
-            value: tabularData.length > 0 ? tabularData[0][field] : ''
+            value: tabularData.length > 0 && tabularData[0] && typeof tabularData[0] === 'object' ? tabularData[0][field] : ''
           }));
 
         // Only add fallback metadata if no meaningful content was extracted and no tabularData exists
@@ -331,15 +342,16 @@ function WebScrapingDashboard() {
 
         // Create a scraping result entry
         const resultEntry = {
-          url: session.url,
-          conditions: conditions,
-          results: formattedResults,
-          tabularData: tabularData, // <-- frontend expects tabularData
-          fields: fields,           // <-- frontend expects fields
-          display_format: display_format, // <-- frontend expects display_format
-          formatted_data: formatted_data, // <-- frontend expects formatted_data
+          url: projectUrlItem.url, // URL from the project_urls table entry
+          conditions: conditions,    // Conditions from the project_urls table entry
+          results: formattedResults, // Simplified single-row summary
+          tabularData: tabularData,  // Actual tabular data from scrape session
+          fields: fields,            // Fields from scrape session or conditions
+          display_format: display_format, // Display format from scrape session or project_urls
+          formatted_data: formatted_data, // Pre-formatted data for paragraph/raw views
+          structuredData: structuredData, // Full structured JSON from scrape session
           project_id: projectId,
-          session_id: session.id
+          session_id: latestScrapeData.id // ID of the scrape session
         };
         scrapingResults.push(resultEntry);
 
@@ -899,193 +911,154 @@ function WebScrapingDashboard() {
   };
 
   const handleStartScraping = async () => {
-    if (!activeProject) return;
+    if (!activeProject || activeProject.urls.length === 0) {
+      updateProjectById(activeProjectId, {
+        isScrapingError: true,
+        errorMessage: 'No URLs to scrape. Please add at least one URL.',
+        scrapingResults: null,
+      });
+      return;
+    }
 
-    let baseUpdates = {
-      scrapingResults: null,
-      isScrapingError: false,
-      errorMessage: '',
+    // Initial UI update: set all URLs to "processing"
+    const processingUrls = activeProject.urls.map(url => ({ ...url, status: "processing" }));
+    updateProjectById(activeProjectId, { 
+      urls: processingUrls,
+      scrapingResults: null, // Clear previous results
+      isScrapingError: false, 
+      errorMessage: '' 
+    });
+
+    const cachingEnabled = localStorage.getItem('cachingEnabled') !== 'false';
+    const newScrapingResults = [];
+    let overallError = null;
+    let allUrlsStatus = [...processingUrls]; // To keep track of individual URL statuses
+
+    // Helper to generate UUID if not globally available
+    const generateUUID = () => {
+      return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
+        const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+        return v.toString(16);
+      });
     };
 
-    if (activeProject.urls.length === 0) {
-      updateProjectById(activeProjectId, {
-        ...baseUpdates,
-        isScrapingError: true,
-        errorMessage: 'No URLs to scrape. Please add at least one URL to the project.',
-      });
-      return;
-    }
+    for (let i = 0; i < activeProject.urls.length; i++) {
+      const urlEntry = activeProject.urls[i];
 
-    // Get caching preference from localStorage
-    const cachingEnabled = localStorage.getItem('cachingEnabled') !== 'false'; // Default to true if not set
-
-    const urlsWithoutConditions = activeProject.urls.filter(url => !url.conditions || url.conditions.trim() === "");
-    if (urlsWithoutConditions.length > 0) {
-      updateProjectById(activeProjectId, {
-        ...baseUpdates,
-        isScrapingError: true,
-        errorMessage: 'Error: Some URLs seem to be missing scraping conditions.',
-      });
-      console.error("Attempted to scrape with missing conditions:", urlsWithoutConditions);
-      return;
-    }
-
-    try {
-      // Update URLs to "processing" status
-      const processingUrlsForProject = activeProject.urls.map(url => ({ ...url, status: "processing" }));
-      updateProjectById(activeProjectId, {
-        ...baseUpdates,
-        urls: processingUrlsForProject,
-      });
-
-      // Use the real API to scrape the first URL
-      const url = activeProject.urls[0].url;
-
-      // Get the display format and conditions from the URL if available
-      const displayFormat = activeProject.urls[0].display_format || 'table';
-      const conditions = activeProject.urls[0].conditions || '';
-
-      // Generate a proper UUID for the session ID
-      const generateUUID = () => {
-        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-          const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
-          return v.toString(16);
+      if (!urlEntry.conditions || urlEntry.conditions.trim() === "") {
+        const errorMsg = `URL "${urlEntry.url}" is missing scraping conditions.`;
+        overallError = overallError ? `${overallError}\n${errorMsg}` : errorMsg;
+        allUrlsStatus = allUrlsStatus.map(u => u.id === urlEntry.id ? { ...u, status: "failed" } : u);
+        newScrapingResults.push({
+          url: urlEntry.url,
+          conditions: urlEntry.conditions,
+          error: "Missing scraping conditions.",
+          display_format: urlEntry.display_format || 'table',
         });
-      };
-
-      const sessionId = generateUUID();
-
-      // Call the API client to execute the scrape
-      const result = await executeScrape(
-        activeProjectId,
-        url,
-        sessionId,
-        !cachingEnabled, // forceRefresh if caching is disabled
-        displayFormat,
-        conditions
-      );
-      
-      console.log('Scraping result:', result);
-      console.log('Result tabular_data:', result.tabular_data);
-      console.log('Result fields:', result.fields);
-      console.log('Result formatted_data:', result.formatted_data);
-
-      // Update URLs to "completed" status
-      const updatedUrlsForProject = activeProject.urls.map(url => ({ ...url, status: "completed" }));
-
-      // Process the real results from the backend
-      const processedResults = updatedUrlsForProject.map(url => {
-        // Get the fields from the result or from the URL conditions
-        const fields = result.fields || url.conditions.split(',').map(field => field.trim());
-
-        // Get the tabular data from the result or create a default one
-        const tabularData = result.tabular_data || [];
-
-        // Convert tabular data to the format expected by the frontend
-        const formattedResults = [];
-
-        if (tabularData.length > 0) {
-          // For each field, create a result entry
-          fields.forEach(field => {
-            if (tabularData[0][field]) {
-              formattedResults.push({
-                title: field,
-                value: tabularData[0][field]
-              });
-            }
-          });
-        }
-
-        // Only show data if we have meaningful scraped content - don't show metadata tables
-        // If no real content was extracted, don't create fallback metadata tables
-
-        return {
-          url: url.url,
-          conditions: url.conditions,
-          results: formattedResults,
-          tabularData: tabularData,
-          fields: fields,
-          display_format: displayFormat, // Use displayFormat from the outer scope
-          formatted_data: result.formatted_data || null // Fix: use result.formatted_data, not result.formatted_tabular_data
-        };
-      });
-
-      const timestamp = new Date().toISOString();
-      const newHistoryId = (activeProject.history && activeProject.history.length > 0 ? Math.max(...activeProject.history.map(h => h.id)) : 0) + 1;
-      const newHistoryItem = {
-        id: newHistoryId,
-        timestamp: timestamp,
-        url: updatedUrlsForProject.length === 1 ? updatedUrlsForProject[0].url : `${updatedUrlsForProject.length} URLs scraped`,
-        dataSize: "1.0 MB",
-        itemsScraped: updatedUrlsForProject.length,
-        status: "completed",
-        session_id: sessionId // Add session_id to connect history items with scraping sessions
-      };
-
-      const finalUpdatesForScraping = {
-        ...baseUpdates,
-        urls: updatedUrlsForProject,
-        scrapingResults: processedResults,
-        history: [newHistoryItem, ...(activeProject.history || [])],
-      };
-
-      setProjects(prevProjects => {
-          const newProjects = prevProjects.map(p =>
-              p.id === activeProjectId ? { ...p, ...finalUpdatesForScraping } : p
-          );
-          const projectAfterUpdate = newProjects.find(p => p.id === activeProjectId);
-          if (projectAfterUpdate && (projectAfterUpdate.ragStatus === 'unprompted' || projectAfterUpdate.ragStatus === 'prompt_later')) {
-              setProjectToPromptRagId(activeProjectId);
-              setIsRagPromptModalOpen(true);
-          }
-          return newProjects;
-      });
-
-      // Clear the cache for this project to force a fresh fetch
-      setSessionsCache(prevCache => {
-        const newCache = { ...prevCache };
-        delete newCache[activeProjectId];
-        return newCache;
-      });
-
-      // We're no longer fetching scraping sessions after a scraping operation
-      // This prevents the data in the table from disappearing
-      // The scraping results are already in the project state from the API response
-      console.log("Scraping operation completed successfully");
-    } catch (error) {
-      console.error('Error scraping URL:', error);
-      
-      // Enhanced error message handling
-      let errorMessage = error.message || 'Failed to scrape URL';
-      let actionableMessage = '';
-      
-      // Detect API key related errors
-      if (errorMessage.includes('Azure OpenAI credentials') || 
-          errorMessage.includes('api_key') || 
-          errorMessage.includes('endpoint')) {
-        actionableMessage = 'Azure OpenAI credentials are missing or invalid. Please check your API key and endpoint in Settings.';
-      } else if (errorMessage.includes('401') || errorMessage.includes('unauthorized')) {
-        actionableMessage = 'Authentication failed. Please verify your API credentials in Settings.';
-      } else if (errorMessage.includes('429') || errorMessage.includes('rate limit')) {
-        actionableMessage = 'API rate limit exceeded. Please wait a moment and try again.';
-      } else if (errorMessage.includes('403') || errorMessage.includes('forbidden')) {
-        actionableMessage = 'API access forbidden. Please check your API key permissions.';
-      } else if (errorMessage.includes('timeout') || errorMessage.includes('network')) {
-        actionableMessage = 'Network or timeout error. Please check your connection and try again.';
-      } else if (errorMessage.includes('quota') || errorMessage.includes('billing')) {
-        actionableMessage = 'API quota exceeded or billing issue. Please check your API account status.';
+        continue; 
       }
-      
-      const finalErrorMessage = actionableMessage 
-        ? `${actionableMessage}\n\nTechnical details: ${errorMessage}`
-        : `Error: ${errorMessage}`;
-      
-      updateProjectById(activeProjectId, {
-        ...baseUpdates,
-        isScrapingError: true,
-        errorMessage: finalErrorMessage,
-      });
+
+      try {
+        const sessionId = generateUUID();
+        // Make sure executeScrape is called with correct parameters from urlEntry
+        const result = await executeScrape(
+          activeProjectId,
+          urlEntry.url,
+          sessionId, // This sessionId is for the request, backend generates its own for the session record
+          !cachingEnabled, // forceRefresh
+          urlEntry.display_format || 'table',
+          urlEntry.conditions
+        );
+        
+        console.log(`Scraping result for ${urlEntry.url}:`, result); // Log the raw API result
+
+        const currentTabularData = result.tabularData || [];
+        const currentFields = result.fields || [];
+        const currentDisplayFormat = result.displayFormat || urlEntry.display_format || 'table';
+        const currentFormattedData = result.formattedData || null;
+        const currentSessionId = result.id || sessionId;
+        const currentRagStatus = result.ragStatus;
+
+        // Log what's actually being used to build the newScrapingResults entry
+        console.log(`For URL ${urlEntry.url} - Preparing resultEntry with:`);
+        console.log(`  tabularData (${currentTabularData ? currentTabularData.length : 'undefined'} items):`, currentTabularData);
+        console.log(`  fields (${currentFields ? currentFields.length : 'undefined'} items):`, currentFields);
+        console.log(`  display_format:`, currentDisplayFormat);
+
+
+        newScrapingResults.push({
+          url: urlEntry.url,
+          conditions: urlEntry.conditions,
+          tabularData: currentTabularData,
+          fields: currentFields,
+          display_format: currentDisplayFormat,
+          formatted_data: currentFormattedData, 
+          // Add structuredData here for consistency with fetchScrapingSessions if possible,
+          // though it's not directly in the executeScrape response.
+          // For now, URLsManagement relies on tabularData primarily for fresh scrapes.
+          // structuredData: result.structuredData, // 'result' from executeScrape doesn't have a top-level structuredData field.
+                                                 // The full LLM output is effectively what becomes tabularData or is in formattedData.
+          project_id: activeProjectId, 
+          session_id: currentSessionId 
+        });
+        
+        allUrlsStatus = allUrlsStatus.map(u => 
+          u.id === urlEntry.id ? { ...u, status: currentRagStatus === "Processing for RAG" ? "processing_rag" : "completed" } : u
+        );
+
+      } catch (error) {
+        console.error(`Error scraping ${urlEntry.url}:`, error);
+        const errorMsg = `Failed to scrape ${urlEntry.url}: ${error.message}`;
+        overallError = overallError ? `${overallError}\n${errorMsg}` : errorMsg;
+        allUrlsStatus = allUrlsStatus.map(u => u.id === urlEntry.id ? { ...u, status: "failed" } : u);
+        newScrapingResults.push({
+          url: urlEntry.url,
+          conditions: urlEntry.conditions,
+          error: error.message,
+          display_format: urlEntry.display_format || 'table',
+        });
+      }
     }
+
+    // Final state update
+    const finalUpdates = {
+      urls: allUrlsStatus, // Update with final statuses
+      scrapingResults: newScrapingResults.length > 0 ? newScrapingResults : null,
+      isScrapingError: !!overallError,
+      errorMessage: overallError || '',
+    };
+    
+    console.log("Final scrapingResults to be set in state:", finalUpdates.scrapingResults); // <-- THIS IS THE CRUCIAL LOG
+
+    updateProjectById(activeProjectId, finalUpdates);
+
+    if (newScrapingResults.filter(r => !r.error).length > 0 && !overallError) {
+        const timestamp = new Date().toISOString();
+        const newHistoryId = (activeProject.history?.length > 0 ? Math.max(...activeProject.history.map(h => h.id)) : 0) + 1;
+        const newHistoryItem = {
+            id: newHistoryId,
+            timestamp: timestamp,
+            url: `${activeProject.urls.length} URLs processed`,
+            dataSize: "N/A", 
+            itemsScraped: newScrapingResults.filter(r => !r.error).length,
+            status: "completed",
+        };
+        finalUpdates.history = [newHistoryItem, ...(activeProject.history || [])];
+    }
+    
+    updateProjectById(activeProjectId, finalUpdates);
+
+    if (newScrapingResults.filter(r => !r.error).length > 0 && (activeProject.ragStatus === 'unprompted' || activeProject.ragStatus === 'prompt_later')) {
+        setProjectToPromptRagId(activeProjectId);
+        setIsRagPromptModalOpen(true);
+    }
+    
+    setSessionsCache(prevCache => {
+      const newCache = { ...prevCache };
+      delete newCache[activeProjectId];
+      return newCache;
+    });
+    console.log("Batch scraping operation completed successfully");
   };
 
   const handleDeleteHistoryItem = (historyItemId) => {
@@ -1227,10 +1200,10 @@ function WebScrapingDashboard() {
   useEffect(() => {
     if (activeProjectId) {
       console.log("Active project changed, fetching data for:", activeProjectId);
-      fetchScrapingSessions(activeProjectId);
-      fetchProjectUrls(activeProjectId);
+      fetchScrapingSessions(activeProjectId); // fetchScrapingSessions is a dependency
+      fetchProjectUrls(activeProjectId);    // fetchProjectUrls is a dependency
     }
-  }, [activeProjectId]);
+  }, [activeProjectId, fetchScrapingSessions, fetchProjectUrls]); // Added dependencies
 
   const renderActivePanel = () => {
     const currentActiveProject = projects.find(p => p.id === activeProjectId);
@@ -1273,6 +1246,13 @@ function WebScrapingDashboard() {
             onDeleteScrapingResult={handleDeleteScrapingResult}
             onOpenSettings={openSettingsModal}
             projectName={currentActiveProject.name}
+            onUpdateDisplayFormat={(resultIndex, newFormat) => {
+              const updatedScrapingResults = [...currentActiveProject.scrapingResults];
+              if (updatedScrapingResults[resultIndex]) {
+                updatedScrapingResults[resultIndex].display_format = newFormat;
+                updateProjectById(activeProjectId, { scrapingResults: updatedScrapingResults });
+              }
+            }}
           />
         ) : (<div className="p-6 text-center text-purple-300">Please select or create a project to manage URLs.</div>);
       case 'chat':

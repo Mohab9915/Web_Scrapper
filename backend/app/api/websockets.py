@@ -5,7 +5,7 @@ from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends, HTTPExce
 from typing import Dict, Any
 from uuid import UUID
 
-from app.utils.websocket_manager import manager
+from ..utils.websocket_manager import manager
 
 router = APIRouter(tags=["websockets"])
 
