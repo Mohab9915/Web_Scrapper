@@ -8,7 +8,7 @@ import SettingsModal from './SettingsModal';
 import ProjectsPanel from './ProjectsPanel';
 import RagPromptModal from './RagPromptModal';
 import ConfirmationModal from './ConfirmationModal';
-import { executeScrape, sendChatMessage, getProjectConversations, createConversation, deleteConversation, getConversationMessages } from './lib/api';
+import { executeScrape, sendChatMessage, getProjectConversations, createConversation, deleteConversation, getConversationMessages, queryEnhancedRagApi } from './lib/api';
 import { useToast } from './components/Toast';
 
 function WebScrapingDashboard() {
@@ -16,6 +16,69 @@ function WebScrapingDashboard() {
   const [activeProjectId, setActiveProjectId] = useState(null);
   const activeProject = projects.find(p => p.id === activeProjectId);
   const toast = useToast();
+
+  // Background data loading function
+  const loadProjectDataInBackground = async (projects) => {
+    try {
+      toast.info('Loading project data...', 'Fetching URLs and history');
+
+      // Load data for projects one by one to avoid overwhelming the server
+      for (const project of projects) {
+        try {
+          // Fetch URLs for this project with timeout
+          const urlsController = new AbortController();
+          const urlsTimeout = setTimeout(() => urlsController.abort(), 5000); // 5 second timeout
+
+          const urlsResponse = await fetch(`http://localhost:8000/api/v1/projects/${project.id}/urls`, {
+            signal: urlsController.signal
+          });
+          clearTimeout(urlsTimeout);
+
+          if (urlsResponse.ok) {
+            const urls = await urlsResponse.json();
+
+            // Fetch sessions for this project with timeout
+            const sessionsController = new AbortController();
+            const sessionsTimeout = setTimeout(() => sessionsController.abort(), 5000); // 5 second timeout
+
+            const sessionsResponse = await fetch(`http://localhost:8000/api/v1/projects/${project.id}/sessions`, {
+              signal: sessionsController.signal
+            });
+            clearTimeout(sessionsTimeout);
+
+            const sessions = sessionsResponse.ok ? await sessionsResponse.json() : [];
+
+            // Update project with actual data
+            setProjects(prevProjects =>
+              prevProjects.map(p =>
+                p.id === project.id
+                  ? {
+                      ...p,
+                      urls: urls || [],
+                      history: sessions && sessions.length > 0 ? sessions : null
+                    }
+                  : p
+              )
+            );
+          }
+        } catch (error) {
+          if (error.name === 'AbortError') {
+            console.warn(`Timeout loading data for project ${project.id}`);
+          } else {
+            console.error(`Error loading data for project ${project.id}:`, error);
+          }
+        }
+
+        // Small delay between requests to avoid overwhelming the server
+        await new Promise(resolve => setTimeout(resolve, 100));
+      }
+
+      toast.success('Project data loaded successfully');
+    } catch (error) {
+      console.error('Error in background data loading:', error);
+      toast.error('Some project data failed to load');
+    }
+  };
 
   // Add loading state
   const [isLoading, setIsLoading] = useState(false);
@@ -58,48 +121,13 @@ function WebScrapingDashboard() {
         }));
 
         setProjects(formattedProjects);
-
-        // Show toast notification about loading project data
-        if (formattedProjects.length > 0) {
-          toast.info('Loading project data...', 'Fetching URLs and history');
-        }
-
-        // Load URL and session data for all projects to show correct counts
-        await Promise.all(formattedProjects.map(async (project) => {
-          try {
-            // Fetch URLs for this project
-            const urlsResponse = await fetch(`http://localhost:8000/api/v1/projects/${project.id}/urls`);
-            if (urlsResponse.ok) {
-              const urls = await urlsResponse.json();
-
-              // Fetch sessions for this project
-              const sessionsResponse = await fetch(`http://localhost:8000/api/v1/projects/${project.id}/sessions`);
-              const sessions = sessionsResponse.ok ? await sessionsResponse.json() : [];
-
-              // Update project with actual data
-              setProjects(prevProjects =>
-                prevProjects.map(p =>
-                  p.id === project.id
-                    ? {
-                        ...p,
-                        urls: urls || [],
-                        history: sessions && sessions.length > 0 ? sessions : null
-                      }
-                    : p
-                )
-              );
-            }
-          } catch (error) {
-            console.error(`Error loading data for project ${project.id}:`, error);
-          }
-        }));
-
-        // Show success toast when data is loaded
-        if (formattedProjects.length > 0) {
-          toast.success('Project data loaded successfully');
-        }
-
         setIsLoading(false);
+
+        // Load additional data in the background (non-blocking)
+        if (formattedProjects.length > 0) {
+          // Don't await this - let it run in background
+          loadProjectDataInBackground(formattedProjects);
+        }
       } catch (error) {
         console.error('Error fetching projects:', error);
         setIsLoading(false);
@@ -595,18 +623,26 @@ function WebScrapingDashboard() {
       };
       setChatMessages(prev => [...prev, tempUserMessage]);
 
-      // Send the message using the new chat API
-      const response = await sendChatMessage(
+      // Use enhanced RAG API for intelligent responses and formatting
+      const response = await queryEnhancedRagApi(
         activeProjectId,
         userMessage,
-        conversationIdToUse, // Use the locally tracked conversation ID
-        null // session_id - can be added later if needed
+        selectedAiModel || 'gpt-4o-mini'
       );
 
-      console.log('Response from sendChatMessage:', response);
+      console.log('Response from enhanced RAG:', response);
 
-      // Reload chat messages to get the latest conversation
-      await loadChatMessages(conversationIdToUse);
+      // Add the AI response to chat messages with enhanced formatting
+      if (response && response.answer) {
+        const aiMessage = {
+          id: 'ai-' + Date.now(),
+          role: 'assistant',
+          content: response.answer,
+          timestamp: new Date(),
+          isEnhanced: true // Flag to indicate this is an enhanced response
+        };
+        setChatMessages(prev => [...prev, aiMessage]);
+      }
 
       // Call the callback to hide typing indicator
       if (callback) callback();
@@ -1036,9 +1072,24 @@ function WebScrapingDashboard() {
           session_id: currentSessionId 
         });
         
-        allUrlsStatus = allUrlsStatus.map(u => 
-          u.id === urlEntry.id ? { ...u, status: currentRagStatus === "Processing for RAG" ? "processing_rag" : "completed" } : u
-        );
+        // Handle status updates more intelligently
+        if (currentRagStatus === "Processing for RAG") {
+          // Set to processing_rag and set up refresh
+          allUrlsStatus = allUrlsStatus.map(u =>
+            u.id === urlEntry.id ? { ...u, status: "processing_rag" } : u
+          );
+
+          console.log(`Setting up delayed refresh for ${urlEntry.url} after RAG processing`);
+          setTimeout(() => {
+            console.log(`Refreshing status for ${urlEntry.url} after RAG processing delay`);
+            fetchProjectUrls(activeProjectId);
+          }, 8000); // Refresh after 8 seconds to get the updated status
+        } else {
+          // For non-RAG or completed RAG, set to completed
+          allUrlsStatus = allUrlsStatus.map(u =>
+            u.id === urlEntry.id ? { ...u, status: "completed" } : u
+          );
+        }
 
       } catch (error) {
         console.error(`Error scraping ${urlEntry.url}:`, error);

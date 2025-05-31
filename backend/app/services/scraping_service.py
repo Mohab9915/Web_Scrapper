@@ -488,13 +488,16 @@ class ScrapingService:
             # Pass project_url_entry_id to RAG service for status updates
             project_url_id_for_rag = project_url_entry["id"] if project_url_entry else None
 
+            # Use enhanced RAG service for better structured data processing
+            from .enhanced_rag_service import EnhancedRAGService
+            enhanced_rag = EnhancedRAGService()
+
             background_tasks.add_task(
-                self.rag_service.ingest_scraped_content,
+                enhanced_rag.ingest_structured_content,
                 project_id,
                 created_session["id"],
-                markdown_content,
-                embedding_api_keys,
                 structured_data,
+                embedding_api_keys,
                 project_url_id_for_rag # Pass the ID of the project_urls entry
             )
             num_tokens = len(markdown_content) / 4

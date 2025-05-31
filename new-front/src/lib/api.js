@@ -313,12 +313,12 @@ export async function fetchCacheStats() {
 export async function queryRagApi(projectId, userMessage, modelName) {
   // Determine which API to use based on the model name
   // Only match exact gpt-4o, not gpt-4o-mini or other variants
-  const isGpt4o = modelName === 'gpt-4o' || 
-                  modelName === 'GPT-4o' || 
+  const isGpt4o = modelName === 'gpt-4o' ||
+                  modelName === 'GPT-4o' ||
                   modelName.toLowerCase() === 'gpt-4o';
-  
+
   let requestBody;
-  
+
   if (isGpt4o) {
     // Use OpenAI API for GPT-4o
     const openaiApiKey = getOpenAIApiKey();
@@ -341,9 +341,35 @@ export async function queryRagApi(projectId, userMessage, modelName) {
       }
     };
   }
-  
+
   return fetchWithErrorHandling(
     `${API_URL}/projects/${projectId}/query-rag`,
+    {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(requestBody),
+    }
+  );
+}
+
+/**
+ * Query the Enhanced RAG API with intelligent formatting and structured data processing
+ */
+export async function queryEnhancedRagApi(projectId, userMessage, modelName) {
+  const azureCredentials = getAzureOpenAICredentials();
+
+  const requestBody = {
+    query: userMessage,
+    model_name: modelName || 'gpt-4o-mini',
+    azure_credentials: {
+      api_key: azureCredentials.api_key,
+      endpoint: azureCredentials.endpoint,
+      deployment_name: modelName || 'gpt-4o-mini'
+    }
+  };
+
+  return fetchWithErrorHandling(
+    `${API_URL}/projects/${projectId}/enhanced-query-rag`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

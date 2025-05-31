@@ -48,8 +48,8 @@ class RAGService:
         self,
         project_id: UUID,
         query: str,
-        llm_model: str,
         azure_credentials: Dict[str, str],
+        llm_model: str = None,
         conversation_id: Optional[UUID] = None,
         session_id: Optional[UUID] = None
     ) -> RAGQueryResponse:
@@ -127,11 +127,54 @@ class RAGService:
         ).execute()
 
         if not rpc_response.data:
-            return RAGQueryResponse(
-                answer="I couldn't find any relevant information in the scraped data.",
-                generation_cost=0.0,
-                source_documents=[]
-            )
+            # Fallback: try keyword-based search for structured data
+            fallback_chunks = await self._keyword_fallback_search(unique_names, query)
+            if fallback_chunks:
+                # Build context from fallback chunks
+                context_chunks = [chunk["content"] for chunk in fallback_chunks]
+                context = "\n\n".join(context_chunks)
+
+                # Try to generate response with fallback data
+                try:
+                    answer = await self._generate_response_with_context(context, query, azure_credentials)
+                    generation_cost = 0.001  # Minimal cost for fallback
+
+                    # Create source documents from fallback
+                    source_documents = []
+                    for chunk in fallback_chunks:
+                        markdown_response = supabase.table("markdowns").select("url").eq("unique_name", chunk["unique_name"]).single().execute()
+                        if markdown_response.data:
+                            source_documents.append({
+                                "content": chunk["content"],
+                                "metadata": {
+                                    "url": markdown_response.data["url"],
+                                    "similarity": 0.5  # Default similarity for keyword match
+                                }
+                            })
+
+                    return RAGQueryResponse(
+                        answer=answer,
+                        generation_cost=generation_cost,
+                        source_documents=source_documents
+                    )
+                except Exception as e:
+                    print(f"Error in fallback response generation: {e}")
+
+            # If no relevant data found, generate a conversational response without context
+            try:
+                answer = await self._generate_conversational_response(query, azure_credentials)
+                return RAGQueryResponse(
+                    answer=answer,
+                    generation_cost=0.001,
+                    source_documents=[]
+                )
+            except Exception as e:
+                print(f"Error in conversational response generation: {e}")
+                return RAGQueryResponse(
+                    answer="Hello! I'm here to help you with information from your scraped data. Feel free to ask me questions about the content that has been processed.",
+                    generation_cost=0.0,
+                    source_documents=[]
+                )
 
         # Build context from matched chunks
         context_chunks = [chunk["content"] for chunk in rpc_response.data]
@@ -161,16 +204,34 @@ class RAGService:
                 url = f"{endpoint}/openai/deployments/{deployment_name}/chat/completions?api-version=2023-05-15"
                 print(f"Using Azure OpenAI chat API URL: {url}")
 
+            # Enhanced system message for conversational AI with data capabilities
+            system_message = """You are a helpful AI assistant that can have natural conversations and help users find information from scraped web data.
+
+CONVERSATION STYLE:
+- Be conversational, friendly, and natural
+- For greetings like "hi" or "hello", respond naturally without showing data
+- For general questions, provide helpful conversational responses
+- Only show structured data when the user specifically asks for it
+
+DATA PRESENTATION:
+When users ask for specific data (products, lists, tables, etc.):
+1. Extract relevant information from the provided context
+2. Present data in appropriate formats:
+   - Use tables for structured data when requested
+   - Use bullet points for lists
+   - Use clear formatting for product information
+3. If no relevant data is found in context, say so clearly
+4. Always base answers on the provided context when discussing data
+
+CONTEXT USAGE:
+- If context is provided, use it to answer data-related questions
+- If no context or context isn't relevant, have a normal conversation
+- Don't force data presentation for casual conversation"""
+
             # Construct the system and user messages
             messages = [
-                {
-                    "role": "system",
-                    "content": "You are an AI assistant answering questions based on provided context. Answer the question based only on the provided context. If the context doesn't contain relevant information, say so."
-                },
-                {
-                    "role": "user",
-                    "content": f"CONTEXT:\n{context}\n\nQUESTION: {query}"
-                }
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": f"CONTEXT:\n{context}\n\nQUESTION: {query}"}
             ]
 
             # Request payload - use the same format for all Azure endpoints
@@ -323,6 +384,122 @@ class RAGService:
         )
 
         return assistant_message
+
+    async def get_chat_messages(self, project_id: UUID, conversation_id: Optional[UUID] = None) -> List[ChatMessageResponse]:
+        """
+        Get chat messages for a project.
+
+        Args:
+            project_id (UUID): Project ID
+            conversation_id (Optional[UUID]): Specific conversation ID
+
+        Returns:
+            List[ChatMessageResponse]: List of chat messages
+        """
+        if conversation_id:
+            return await self.chat_history_service.get_conversation_messages(project_id, conversation_id)
+        else:
+            # Get the most recent conversation
+            conversations = await self.chat_history_service.get_project_conversations(project_id, limit=1)
+            if conversations:
+                return await self.chat_history_service.get_conversation_messages(
+                    project_id, UUID(conversations[0]["conversation_id"])
+                )
+            return []
+
+    async def query_rag_openai(self, project_id: UUID, query: str, api_key: str, model_name: str = None) -> RAGQueryResponse:
+        """
+        Query the RAG system using OpenAI directly.
+
+        Args:
+            project_id (UUID): Project ID
+            query (str): Query text
+            api_key (str): OpenAI API key
+            model_name (str): OpenAI model name (e.g., "gpt-4o")
+
+        Returns:
+            RAGQueryResponse: Response with answer and sources
+        """
+        # Always use gpt-4o for OpenAI direct API calls
+        model_name = "gpt-4o" if not model_name or model_name == "gpt-4o-mini" else model_name
+
+        try:
+            # Check if project exists and has RAG enabled
+            project_response = supabase.table("projects").select("rag_enabled").eq("id", str(project_id)).single().execute()
+            if not project_response.data:
+                raise HTTPException(status_code=404, detail="Project not found")
+
+            if not project_response.data["rag_enabled"]:
+                raise HTTPException(status_code=400, detail="RAG is not enabled for this project")
+
+            # Get sessions with RAG data
+            sessions_response = supabase.table("scrape_sessions").select("unique_scrape_identifier, status, url").eq("project_id", str(project_id)).eq("status", "rag_ingested").execute()
+
+            if not sessions_response.data:
+                # Try to find scraped sessions if no rag_ingested sessions
+                sessions_response = supabase.table("scrape_sessions").select("unique_scrape_identifier, status, url").eq("project_id", str(project_id)).eq("status", "scraped").execute()
+
+            if not sessions_response.data:
+                return RAGQueryResponse(
+                    answer="No RAG-processed data available for this project. Please ensure content has been scraped and RAG ingestion is complete.",
+                    generation_cost=0.0,
+                    source_documents=[]
+                )
+
+            unique_names = [session["unique_scrape_identifier"] for session in sessions_response.data]
+
+            # Use keyword fallback search since we don't have OpenAI embeddings
+            fallback_chunks = await self._keyword_fallback_search(unique_names, query)
+
+            if not fallback_chunks:
+                # Generate conversational response
+                try:
+                    answer = await self._generate_openai_conversational_response(query, api_key, model_name)
+                    return RAGQueryResponse(
+                        answer=answer,
+                        generation_cost=0.001,
+                        source_documents=[]
+                    )
+                except Exception as e:
+                    return RAGQueryResponse(
+                        answer="Hello! I'm here to help you with information from your scraped data. Feel free to ask me questions about the content that has been processed.",
+                        generation_cost=0.0,
+                        source_documents=[]
+                    )
+
+            # Build context from fallback chunks
+            context_chunks = [chunk["content"] for chunk in fallback_chunks]
+            context = "\n\n".join(context_chunks)
+
+            # Generate response using OpenAI
+            answer = await self._generate_openai_response_with_context(context, query, api_key, model_name)
+
+            # Create source documents
+            source_documents = []
+            for chunk in fallback_chunks:
+                markdown_response = supabase.table("markdowns").select("url").eq("unique_name", chunk["unique_name"]).single().execute()
+                if markdown_response.data:
+                    source_documents.append({
+                        "content": chunk["content"],
+                        "metadata": {
+                            "url": markdown_response.data["url"],
+                            "similarity": chunk.get("similarity", 0.5)
+                        }
+                    })
+
+            return RAGQueryResponse(
+                answer=answer,
+                generation_cost=0.005,  # Approximate cost for GPT-4o
+                source_documents=source_documents
+            )
+
+        except Exception as e:
+            print(f"Error in OpenAI RAG query: {e}")
+            return RAGQueryResponse(
+                answer=f"Sorry, I encountered an error while processing your query: {str(e)}",
+                generation_cost=0.0,
+                source_documents=[]
+            )
 
     async def ingest_scraped_content(
         self,
@@ -537,3 +714,341 @@ class RAGService:
                         final_text += f"**{field.replace('_', ' ').title()}:** {', '.join(values[:3])}{'...' if len(values) > 3 else ''}\n"
         
         return final_text
+
+    async def _keyword_fallback_search(self, unique_names: List[str], query: str) -> List[Dict[str, Any]]:
+        """
+        Fallback search using keyword matching for structured data.
+
+        Args:
+            unique_names (List[str]): List of unique identifiers to search in
+            query (str): Search query
+
+        Returns:
+            List[Dict[str, Any]]: List of matching chunks
+        """
+        try:
+            # Extract keywords from query
+            query_lower = query.lower()
+            keywords = [word.strip() for word in query_lower.split() if len(word.strip()) > 2]
+
+            # Get all chunks for the unique names
+            all_chunks = []
+            for unique_name in unique_names:
+                chunks_response = supabase.table("embeddings").select("*").eq("unique_name", unique_name).execute()
+                if chunks_response.data:
+                    all_chunks.extend(chunks_response.data)
+
+            # Score chunks based on keyword matches
+            scored_chunks = []
+            for chunk in all_chunks:
+                content_lower = chunk["content"].lower()
+                score = 0
+
+                # Check for exact keyword matches
+                for keyword in keywords:
+                    if keyword in content_lower:
+                        score += 1
+
+                # Boost score for product-related terms
+                product_terms = ["product", "item", "name", "price", "cost", "available", "listing"]
+                for term in product_terms:
+                    if term in query_lower and term in content_lower:
+                        score += 2
+
+                if score > 0:
+                    chunk["similarity"] = score / len(keywords) if keywords else 0.5
+                    scored_chunks.append(chunk)
+
+            # Sort by score and return top matches
+            scored_chunks.sort(key=lambda x: x["similarity"], reverse=True)
+            return scored_chunks[:3]  # Return top 3 matches
+
+        except Exception as e:
+            print(f"Error in keyword fallback search: {e}")
+            return []
+
+    async def _generate_response_with_context(self, context: str, query: str, azure_credentials: Dict[str, str]) -> str:
+        """
+        Generate a response using Azure OpenAI with the given context.
+
+        Args:
+            context (str): Context to use for generation
+            query (str): User query
+            azure_credentials (Dict[str, str]): Azure credentials
+
+        Returns:
+            str: Generated response
+        """
+        try:
+            import httpx
+
+            # Get Azure OpenAI credentials
+            api_key = azure_credentials['api_key']
+            endpoint = azure_credentials['endpoint']
+
+            # Always use the correct chat model
+            deployment_name = AZURE_CHAT_MODEL
+
+            # Determine the correct API endpoint format
+            if "services.ai.azure.com" in endpoint:
+                base_endpoint = endpoint.replace("/models", "")
+                url = f"{base_endpoint}/openai/deployments/{deployment_name}/chat/completions?api-version=2023-05-15"
+            else:
+                url = f"{endpoint}/openai/deployments/{deployment_name}/chat/completions?api-version=2023-05-15"
+
+            # Enhanced system message for conversational AI with data capabilities
+            system_message = """You are a helpful AI assistant that can have natural conversations and help users find information from scraped web data.
+
+CONVERSATION STYLE:
+- Be conversational, friendly, and natural
+- For greetings like "hi" or "hello", respond naturally without showing data
+- For general questions, provide helpful conversational responses
+- Only show structured data when the user specifically asks for it
+
+DATA PRESENTATION:
+When users ask for specific data (products, lists, tables, etc.):
+1. Extract relevant information from the provided context
+2. Present data in appropriate formats:
+   - Use tables for structured data when requested
+   - Use bullet points for lists
+   - Use clear formatting for product information
+3. If no relevant data is found in context, say so clearly
+4. Always base answers on the provided context when discussing data
+
+CONTEXT USAGE:
+- If context is provided, use it to answer data-related questions
+- If no context or context isn't relevant, have a normal conversation
+- Don't force data presentation for casual conversation"""
+
+            messages = [
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": f"CONTEXT:\n{context}\n\nQUESTION: {query}"}
+            ]
+
+            payload = {
+                "messages": messages,
+                "temperature": 0.2,
+                "top_p": 0.8,
+                "max_tokens": 1024
+            }
+
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    url,
+                    json=payload,
+                    headers={
+                        "Content-Type": "application/json",
+                        "api-key": api_key
+                    }
+                )
+
+                if response.status_code != 200:
+                    print(f"Error from Azure OpenAI API: {response.text}")
+                    return "Sorry, I encountered an error while generating a response."
+
+                response_data = response.json()
+                return response_data.get("choices", [{}])[0].get("message", {}).get("content", "")
+
+        except Exception as e:
+            print(f"Error generating response: {e}")
+            return f"Sorry, I encountered an error while generating a response: {str(e)}"
+
+    async def _generate_conversational_response(self, query: str, azure_credentials: Dict[str, str]) -> str:
+        """
+        Generate a conversational response without context for general queries.
+
+        Args:
+            query (str): User query
+            azure_credentials (Dict[str, str]): Azure credentials
+
+        Returns:
+            str: Generated conversational response
+        """
+        try:
+            import httpx
+
+            # Get Azure OpenAI credentials
+            api_key = azure_credentials['api_key']
+            endpoint = azure_credentials['endpoint']
+
+            # Always use the correct chat model
+            deployment_name = AZURE_CHAT_MODEL
+
+            # Determine the correct API endpoint format
+            if "services.ai.azure.com" in endpoint:
+                base_endpoint = endpoint.replace("/models", "")
+                url = f"{base_endpoint}/openai/deployments/{deployment_name}/chat/completions?api-version=2023-05-15"
+            else:
+                url = f"{endpoint}/openai/deployments/{deployment_name}/chat/completions?api-version=2023-05-15"
+
+            # Conversational system message
+            system_message = """You are a helpful AI assistant for a web scraping and data analysis platform.
+            You can have natural conversations with users and help them with their scraped data when they ask specific questions.
+
+            Be friendly, conversational, and helpful. If users greet you or ask general questions, respond naturally.
+            If they ask about data, products, or specific information, let them know you can help them find that information from their scraped data."""
+
+            messages = [
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": query}
+            ]
+
+            payload = {
+                "messages": messages,
+                "temperature": 0.7,  # Higher temperature for more natural conversation
+                "top_p": 0.9,
+                "max_tokens": 512
+            }
+
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    url,
+                    json=payload,
+                    headers={
+                        "Content-Type": "application/json",
+                        "api-key": api_key
+                    }
+                )
+
+                if response.status_code != 200:
+                    print(f"Error from Azure OpenAI API: {response.text}")
+                    return "Hello! I'm here to help you with your scraped data. What would you like to know?"
+
+                response_data = response.json()
+                return response_data.get("choices", [{}])[0].get("message", {}).get("content", "")
+
+        except Exception as e:
+            print(f"Error generating conversational response: {e}")
+            return "Hello! I'm here to help you with your scraped data. What would you like to know?"
+
+    async def _generate_openai_conversational_response(self, query: str, api_key: str, model_name: str) -> str:
+        """
+        Generate a conversational response using OpenAI without context.
+
+        Args:
+            query (str): User query
+            api_key (str): OpenAI API key
+            model_name (str): OpenAI model name
+
+        Returns:
+            str: Generated conversational response
+        """
+        try:
+            import httpx
+
+            url = "https://api.openai.com/v1/chat/completions"
+
+            system_message = """You are a helpful AI assistant for a web scraping and data analysis platform.
+            You can have natural conversations with users and help them with their scraped data when they ask specific questions.
+
+            Be friendly, conversational, and helpful. If users greet you or ask general questions, respond naturally.
+            If they ask about data, products, or specific information, let them know you can help them find that information from their scraped data."""
+
+            messages = [
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": query}
+            ]
+
+            payload = {
+                "model": model_name,
+                "messages": messages,
+                "temperature": 0.7,
+                "top_p": 0.9,
+                "max_tokens": 512
+            }
+
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    url,
+                    json=payload,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {api_key}"
+                    }
+                )
+
+                if response.status_code != 200:
+                    print(f"Error from OpenAI API: {response.text}")
+                    return "Hello! I'm here to help you with your scraped data. What would you like to know?"
+
+                response_data = response.json()
+                return response_data.get("choices", [{}])[0].get("message", {}).get("content", "")
+
+        except Exception as e:
+            print(f"Error generating OpenAI conversational response: {e}")
+            return "Hello! I'm here to help you with your scraped data. What would you like to know?"
+
+    async def _generate_openai_response_with_context(self, context: str, query: str, api_key: str, model_name: str) -> str:
+        """
+        Generate a response using OpenAI with the given context.
+
+        Args:
+            context (str): Context to use for generation
+            query (str): User query
+            api_key (str): OpenAI API key
+            model_name (str): OpenAI model name
+
+        Returns:
+            str: Generated response
+        """
+        try:
+            import httpx
+
+            url = "https://api.openai.com/v1/chat/completions"
+
+            system_message = """You are a helpful AI assistant that can have natural conversations and help users find information from scraped web data.
+
+CONVERSATION STYLE:
+- Be conversational, friendly, and natural
+- For greetings like "hi" or "hello", respond naturally without showing data
+- For general questions, provide helpful conversational responses
+- Only show structured data when the user specifically asks for it
+
+DATA PRESENTATION:
+When users ask for specific data (products, lists, tables, etc.):
+1. Extract relevant information from the provided context
+2. Present data in appropriate formats:
+   - Use tables for structured data when requested
+   - Use bullet points for lists
+   - Use clear formatting for product information
+3. If no relevant data is found in context, say so clearly
+4. Always base answers on the provided context when discussing data
+
+CONTEXT USAGE:
+- If context is provided, use it to answer data-related questions
+- If no context or context isn't relevant, have a normal conversation
+- Don't force data presentation for casual conversation"""
+
+            messages = [
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": f"CONTEXT:\n{context}\n\nQUESTION: {query}"}
+            ]
+
+            payload = {
+                "model": model_name,
+                "messages": messages,
+                "temperature": 0.2,
+                "top_p": 0.8,
+                "max_tokens": 1024
+            }
+
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    url,
+                    json=payload,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {api_key}"
+                    }
+                )
+
+                if response.status_code != 200:
+                    print(f"Error from OpenAI API: {response.text}")
+                    return "Sorry, I encountered an error while generating a response."
+
+                response_data = response.json()
+                return response_data.get("choices", [{}])[0].get("message", {}).get("content", "")
+
+        except Exception as e:
+            print(f"Error generating OpenAI response: {e}")
+            return f"Sorry, I encountered an error while generating a response: {str(e)}"

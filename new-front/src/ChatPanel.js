@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef } from 'react';
 import { Send, Database, Plus, MessageSquare, Trash2, Copy, Bot, User } from 'lucide-react';
 import TypingIndicator from './components/TypingIndicator';
+import MessageRenderer from './components/MessageRenderer';
 import { useToast } from './components/Toast';
 
 function ChatPanel({
@@ -172,16 +173,25 @@ function ChatPanel({
                         message.role === 'user' ? 'message-user' : 'message-ai'
                       }`}
                     >
-                      {message.content}
-
-                      {/* Copy button */}
-                      <button
-                        onClick={() => copyMessage(message.content)}
-                        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-white/10"
-                        title="Copy message"
-                      >
-                        <Copy size={14} />
-                      </button>
+                      {message.role === 'assistant' ? (
+                        <MessageRenderer
+                          content={message.content}
+                          onCopy={copyMessage}
+                          isEnhanced={message.isEnhanced || true} // Use enhanced rendering for all AI messages
+                        />
+                      ) : (
+                        <>
+                          {message.content}
+                          {/* Copy button for user messages */}
+                          <button
+                            onClick={() => copyMessage(message.content)}
+                            className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-white/10"
+                            title="Copy message"
+                          >
+                            <Copy size={14} />
+                          </button>
+                        </>
+                      )}
                     </div>
 
                     {/* Timestamp */}
