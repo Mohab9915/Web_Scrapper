@@ -31,20 +31,14 @@ class ProjectUrlService:
 
         project_urls_with_status = []
         for url_data in urls_response.data:
-            # Find the latest scrape session for this URL and project
-            latest_session_response = supabase.table("scrape_sessions").select("status", "scraped_at")\
-                .eq("project_id", str(project_id))\
-                .eq("url", url_data["url"])\
-                .order("scraped_at", desc=True)\
-                .limit(1).execute()
-
-            status = "pending"
-            if latest_session_response.data:
-                status = latest_session_response.data[0]["status"]
-
-            # Combine url data with latest status
+            # Use the status from the project_urls table directly
+            # This table maintains the overall status of the URL (pending, processing, completed, failed)
+            # The scrape_sessions table status is for individual scraping sessions
             project_url_response_data = url_data.copy()
-            project_url_response_data["status"] = status
+
+            # Ensure status is set (fallback to pending if somehow missing)
+            if not project_url_response_data.get("status"):
+                project_url_response_data["status"] = "pending"
 
             # Convert to response model
             project_urls_with_status.append(ProjectUrlResponse(**project_url_response_data))

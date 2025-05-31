@@ -16,8 +16,11 @@ class DisplayFormat(str, Enum):
 class ScrapeStatus(str, Enum):
     """Status of a scrape session."""
     PENDING = "pending"
+    PROCESSING = "processing"
+    PROCESSING_RAG = "processing_rag"
     RUNNING = "running"
     COMPLETE = "complete"
+    COMPLETED = "completed"  # Added for project_urls table
     FAILED = "failed"
     SCRAPED = "scraped"
     EMBEDDED_FOR_RAG = "embedded for RAG"

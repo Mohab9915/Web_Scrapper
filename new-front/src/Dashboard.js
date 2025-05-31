@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { MessageCircle, Globe, Settings, AlertCircle, ChevronDown,
          Database, Clock, Folder, Home } from 'lucide-react';
 import URLManagement from './URLsManagement';
@@ -8,7 +8,7 @@ import SettingsModal from './SettingsModal';
 import ProjectsPanel from './ProjectsPanel';
 import RagPromptModal from './RagPromptModal';
 import ConfirmationModal from './ConfirmationModal';
-import { executeScrape, queryRagApi, getChatMessages, sendChatMessage, getProjectConversations, createConversation, deleteConversation, getConversationMessages } from './lib/api';
+import { executeScrape, sendChatMessage, getProjectConversations, createConversation, deleteConversation, getConversationMessages } from './lib/api';
 
 function WebScrapingDashboard() {
   const [projects, setProjects] = useState([]);
@@ -40,36 +40,25 @@ function WebScrapingDashboard() {
         console.log('Fetched projects:', data);
 
         // Convert the backend projects to the format expected by the frontend
-        // but don't reset the URLs, scrapingResults, and history if they already exist
-        const formattedProjects = data.map(project => {
-          // Find existing project data if available
-          const existingProject = projects.find(p => p.id === project.id);
-
-          return {
-            id: project.id,
-            name: project.name,
-            // Keep existing data if available, otherwise initialize with empty arrays
-            urls: existingProject?.urls || [],
-            scrapingResults: existingProject?.scrapingResults || null,
-            isScrapingError: existingProject?.isScrapingError || false,
-            errorMessage: existingProject?.errorMessage || '',
-            // Preserve null history to ensure "No history" message shows correctly
-            history: existingProject?.history !== undefined ? existingProject.history : null,
-            createdAt: project.created_at,
-            ragStatus: project.rag_enabled ? 'enabled' : 'unprompted',
-          };
-        });
+        const formattedProjects = data.map(project => ({
+          id: project.id,
+          name: project.name,
+          // Initialize with empty arrays for new projects
+          urls: [],
+          scrapingResults: null,
+          isScrapingError: false,
+          errorMessage: '',
+          // Use null to ensure "No history" message shows correctly
+          history: null,
+          createdAt: project.created_at,
+          ragStatus: project.rag_enabled ? 'enabled' : 'unprompted',
+        }));
 
         setProjects(formattedProjects);
         setIsLoading(false);
 
-        // If there's an active project, fetch its scraping sessions
-        if (activeProjectId) {
-          const activeProject = formattedProjects.find(p => p.id === activeProjectId);
-          if (activeProject) {
-            fetchScrapingSessions(activeProjectId);
-          }
-        }
+        // Note: We don't fetch scraping sessions here anymore since activeProjectId
+        // might not be set yet. The sessions will be fetched when a project is selected.
       } catch (error) {
         console.error('Error fetching projects:', error);
         setIsLoading(false);
@@ -77,7 +66,28 @@ function WebScrapingDashboard() {
     };
 
     fetchProjects();
-  }, [projects, activeProjectId]); // Added projects, activeProjectId as per eslint, though fetchProjects itself doesn't use them directly, its internal logic might if activeProjectId is set.
+  }, []); // Empty dependency array - only run once on mount
+
+  // Chat history management functions - defined early to avoid hoisting issues
+  const loadChatMessages = useCallback(async (conversationIdOverride = null) => {
+    const conversationIdToUse = conversationIdOverride || currentConversationId;
+
+    if (!activeProjectId || !conversationIdToUse) {
+      setChatMessages([]);
+      return;
+    }
+
+    try {
+      console.log('Loading messages for conversation:', conversationIdToUse);
+      // Use getConversationMessages which is specifically designed for fetching conversation messages
+      const messages = await getConversationMessages(activeProjectId, conversationIdToUse);
+      console.log('Retrieved messages:', messages);
+      setChatMessages(messages || []);
+    } catch (error) {
+      console.error('Error loading chat messages:', error);
+      setChatMessages([]);
+    }
+  }, [activeProjectId, currentConversationId]);
 
   // Load chat data when active project changes
   useEffect(() => {
@@ -90,7 +100,7 @@ function WebScrapingDashboard() {
             ...prev,
             [activeProjectId]: projectConversations || []
           }));
-          
+
           // If there's no current conversation but there are conversations, select the first one
           if (projectConversations && projectConversations.length > 0 && !currentConversationId) { // currentConversationId is used
             setCurrentConversationId(projectConversations[0].id);
@@ -104,7 +114,7 @@ function WebScrapingDashboard() {
         setChatMessages([]);
       }
     };
-    
+
     loadData();
   }, [activeProjectId, currentConversationId]); // Added currentConversationId
 
@@ -112,11 +122,11 @@ function WebScrapingDashboard() {
   useEffect(() => {
     if (activeProjectId && currentConversationId) {
       console.log('Conversation ID changed, loading messages for:', currentConversationId);
-      loadChatMessages(currentConversationId); // loadChatMessages is a dependency
+      loadChatMessages(currentConversationId);
     } else {
       setChatMessages([]);
     }
-  }, [activeProjectId, currentConversationId, loadChatMessages]); // Added loadChatMessages
+  }, [activeProjectId, currentConversationId]); // Removed loadChatMessages to avoid infinite loops
 
   const [activeTab, setActiveTab] = useState('projects');
   const [selectedAiModel, setSelectedAiModel] = useState('gpt-4o-mini');
@@ -204,7 +214,7 @@ function WebScrapingDashboard() {
     }
   };
 
-  const fetchScrapingSessions = async (projectId) => {
+  const fetchScrapingSessions = useCallback(async (projectId) => {
     try {
       // Show loading state
       setIsLoading(true);
@@ -384,7 +394,7 @@ function WebScrapingDashboard() {
       console.error('Error fetching scraping sessions:', error);
       setIsLoading(false);
     }
-  };
+  }, [projects, sessionsCache]); // Dependencies for useCallback
 
   const handleSelectProject = (projectId) => {
     setActiveProjectId(projectId);
@@ -574,30 +584,11 @@ function WebScrapingDashboard() {
     }
   };
 
-  // Chat history management functions
-  const loadChatMessages = async (conversationIdOverride = null) => {
-    const conversationIdToUse = conversationIdOverride || currentConversationId;
-    
-    if (!activeProjectId || !conversationIdToUse) {
-      setChatMessages([]);
-      return;
-    }
-    
-    try {
-      console.log('Loading messages for conversation:', conversationIdToUse);
-      // Use getConversationMessages which is specifically designed for fetching conversation messages
-      const messages = await getConversationMessages(activeProjectId, conversationIdToUse);
-      console.log('Retrieved messages:', messages);
-      setChatMessages(messages || []);
-    } catch (error) {
-      console.error('Error loading chat messages:', error);
-      setChatMessages([]);
-    }
-  };
 
-  const loadConversations = async () => {
+
+  const loadConversations = useCallback(async () => {
     if (!activeProjectId) return;
-    
+
     try {
       const conversations = await getProjectConversations(activeProjectId);
       setConversations(prev => ({
@@ -607,11 +598,11 @@ function WebScrapingDashboard() {
     } catch (error) {
       console.error('Error loading conversations:', error);
     }
-  };
+  }, [activeProjectId]);
 
-  const createNewConversation = async () => {
+  const createNewConversation = useCallback(async () => {
     if (!activeProjectId) return;
-    
+
     try {
       console.log('Creating new conversation for project:', activeProjectId);
       const response = await createConversation(activeProjectId);
@@ -625,31 +616,31 @@ function WebScrapingDashboard() {
       console.error('Error creating conversation:', error);
       return null;
     }
-  };
+  }, [activeProjectId, loadConversations]);
 
-  const switchConversation = async (conversationId) => {
+  const switchConversation = useCallback(async (conversationId) => {
     setCurrentConversationId(conversationId);
     await loadChatMessages(conversationId);
-  };
+  }, [loadChatMessages]);
 
-  const handleDeleteConversation = async (conversationId) => {
+  const handleDeleteConversation = useCallback(async (conversationId) => {
     if (!activeProjectId) return;
-    
+
     try {
       await deleteConversation(activeProjectId, conversationId);
-      
+
       // If we deleted the current conversation, clear it
       if (currentConversationId === conversationId) {
         setCurrentConversationId(null);
         setChatMessages([]);
       }
-      
+
       // Reload conversations
       await loadConversations();
     } catch (error) {
       console.error('Error deleting conversation:', error);
     }
-  };
+  }, [activeProjectId, currentConversationId, loadConversations]);
 
   const handleAddUrl = async (newUrlData) => {
     if (!activeProject) return;
@@ -699,7 +690,7 @@ function WebScrapingDashboard() {
       // with a temporary ID that will be replaced when the page is refreshed
       const generateUUID = () => {
         return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-          const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+          const r = (Math.random() * 16) | 0, v = c === 'x' ? r : ((r & 0x3) | 0x8);
           return v.toString(16);
         });
       };
@@ -937,7 +928,7 @@ function WebScrapingDashboard() {
     // Helper to generate UUID if not globally available
     const generateUUID = () => {
       return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function(c) {
-        const r = Math.random() * 16 | 0, v = c === 'x' ? r : (r & 0x3 | 0x8);
+        const r = (Math.random() * 16) | 0, v = c === 'x' ? r : ((r & 0x3) | 0x8);
         return v.toString(16);
       });
     };
@@ -1151,7 +1142,7 @@ function WebScrapingDashboard() {
   }, [activeProjectId, activeTab]);
 
   // Fetch URLs from the backend
-  const fetchProjectUrls = async (projectId) => {
+  const fetchProjectUrls = useCallback(async (projectId) => {
     try {
       const response = await fetch(`http://localhost:8000/api/v1/projects/${projectId}/urls`);
       if (!response.ok) {
@@ -1163,19 +1154,16 @@ function WebScrapingDashboard() {
 
       // Update the project with the URLs from the backend
       if (urls && urls.length > 0) {
-        // Get the existing URLs to preserve their status
-        const existingUrls = projects.find(p => p.id === projectId)?.urls || [];
+        console.log("Processing URLs from backend:", urls);
 
         updateProjectById(projectId, {
           urls: urls.map(url => {
-            // Find the existing URL to get its status
-            const existingUrl = existingUrls.find(eu => eu.id === url.id);
-
+            console.log(`URL ${url.url} has backend status: ${url.status}`);
             return {
               id: url.id, // Use the UUID from the backend
               url: url.url,
-              // Preserve the existing status if available, otherwise use "pending"
-              status: existingUrl?.status || "pending",
+              // Use the status from the backend API response
+              status: url.status || "pending",
               conditions: url.conditions,
               display_format: url.display_format
             };
@@ -1194,16 +1182,16 @@ function WebScrapingDashboard() {
     } catch (error) {
       console.error('Error fetching URLs:', error);
     }
-  };
+  }, [projects]); // Dependencies for useCallback
 
   // Fetch scraping sessions and URLs when activeProjectId changes
   useEffect(() => {
     if (activeProjectId) {
       console.log("Active project changed, fetching data for:", activeProjectId);
-      fetchScrapingSessions(activeProjectId); // fetchScrapingSessions is a dependency
-      fetchProjectUrls(activeProjectId);    // fetchProjectUrls is a dependency
+      fetchScrapingSessions(activeProjectId);
+      fetchProjectUrls(activeProjectId);
     }
-  }, [activeProjectId, fetchScrapingSessions, fetchProjectUrls]); // Added dependencies
+  }, [activeProjectId]); // Only depend on activeProjectId to avoid infinite loops
 
   const renderActivePanel = () => {
     const currentActiveProject = projects.find(p => p.id === activeProjectId);

@@ -7,6 +7,9 @@ from fastapi.responses import JSONResponse
 
 from .api import projects, scraping, rag, websockets, cache, project_urls, history, project_settings
 from .config import settings
+from .services.scraping_service import ScrapingService
+from uuid import UUID
+from fastapi import Depends
 # Import diagnostics separately to avoid module not found errors
 try:
     from .api import diagnostics
@@ -51,12 +54,55 @@ async def health_check():
     """Health check endpoint."""
     return {"status": "ok"}
 
+# Add download endpoint without API prefix
+@app.get("/download/{project_id}/{session_id}/{format}")
+async def download_scraped_data(
+    project_id: UUID,
+    session_id: UUID,
+    format: str,
+    scraping_service: ScrapingService = Depends()
+):
+    """
+    Download scraped data in JSON, CSV, or PDF format.
+    This endpoint is not prefixed with /api/v1 to match frontend expectations.
+    """
+    from fastapi import HTTPException
+
+    if format not in ["json", "csv", "pdf"]:
+        raise HTTPException(status_code=400, detail="Invalid format. Must be 'json', 'csv', or 'pdf'")
+
+    return await scraping_service.get_download_file(project_id, session_id, format)
+
 @app.exception_handler(Exception)
 async def global_exception_handler(request, exc):
-    """Global exception handler."""
+    """Global exception handler with improved error messages."""
+    error_message = str(exc)
+
+    # Handle common database errors
+    if "PGRST116" in error_message and "0 rows" in error_message:
+        return JSONResponse(
+            status_code=404,
+            content={"detail": "Resource not found. Please check if the project or session exists."}
+        )
+
+    # Handle URL validation errors
+    if "NoneType" in error_message and "data" in error_message:
+        return JSONResponse(
+            status_code=400,
+            content={"detail": "Invalid URL or request data. Please check your input and try again."}
+        )
+
+    # Handle connection errors
+    if "connection" in error_message.lower() or "timeout" in error_message.lower():
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "Service temporarily unavailable. Please try again later."}
+        )
+
+    # Default error response
     return JSONResponse(
         status_code=500,
-        content={"detail": f"An unexpected error occurred: {str(exc)}"}
+        content={"detail": "An unexpected error occurred. Please contact support if the problem persists."}
     )
 
 if __name__ == "__main__":

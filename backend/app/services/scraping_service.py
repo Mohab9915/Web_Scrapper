@@ -45,30 +45,44 @@ class ScrapingService:
         Returns:
             List[Dict[str, Any]]: List of URLs with their status and latest scrape data.
         """
-        # Select fields from project_urls and explicitly from the joined scrape_sessions table (aliased as latest_session_data)
-        # Ensure all fields required by ScrapedSessionResponse (especially created_at for scraped_at) are selected from scrape_sessions.
-        project_urls_query = supabase.table("project_urls").select(
-            "id, project_id, url, conditions, display_format, created_at, status, rag_enabled, last_scraped_session_id, " +
-            "latest_session_data:last_scraped_session_id(id, project_id, url, scraped_at, status, raw_markdown, structured_data_json, display_format, formatted_tabular_data)" # Changed markdown_content to raw_markdown
-        ).eq("project_id", str(project_id)).order("created_at", desc=True)
-        
-        project_urls_response = project_urls_query.execute()
-        
+        # Get project URLs first
+        project_urls_response = supabase.table("project_urls").select(
+            "id, project_id, url, conditions, display_format, created_at, status, rag_enabled, last_scraped_session_id"
+        ).eq("project_id", str(project_id)).order("created_at", desc=True).execute()
+
         if not project_urls_response.data:
             return []
 
         results = []
         for pu_entry in project_urls_response.data:
             session_data_for_model = {}
-            raw_session_data = pu_entry.get("latest_session_data")
+            raw_session_data = None
+
+            # Get the session data separately if last_scraped_session_id exists
+            if pu_entry.get("last_scraped_session_id"):
+                try:
+                    session_response = supabase.table("scrape_sessions").select(
+                        "id, project_id, url, scraped_at, status, raw_markdown, structured_data_json, display_format, formatted_tabular_data"
+                    ).eq("id", pu_entry["last_scraped_session_id"]).single().execute()
+
+                    if session_response.data:
+                        raw_session_data = session_response.data
+                        print(f"Found session data for URL {pu_entry['url']}: {raw_session_data['id']}")
+                except Exception as e:
+                    print(f"Error fetching session data for {pu_entry['url']}: {e}")
+                    raw_session_data = None
 
             if raw_session_data and isinstance(raw_session_data, dict) and raw_session_data.get("id"):
+                print(f"Processing session data for URL {pu_entry['url']}: {raw_session_data['id']}")
+                print(f"Session has raw_markdown: {bool(raw_session_data.get('raw_markdown'))}")
+                print(f"Session has structured_data_json: {bool(raw_session_data.get('structured_data_json'))}")
+
                 # Copy raw data to prepare for model instantiation
                 session_data_for_model = dict(raw_session_data)
-                
+
                 # Reconstruct derived fields for ScrapedSessionResponse
                 # structured_data, tabular_data, fields
-                
+
                 # Get fields from project_urls.conditions first, as this is the source of truth for desired columns
                 conditions_str = pu_entry.get("conditions", "")
                 session_fields = [field.strip() for field in conditions_str.split(',')] if conditions_str else []
@@ -142,11 +156,21 @@ class ScrapingService:
             final_session_data_obj = None
             if session_data_for_model and session_data_for_model.get("id"):
                 try:
+                    print(f"Attempting to create ScrapedSessionResponse for session {session_data_for_model.get('id')}")
+                    print(f"Session data keys: {list(session_data_for_model.keys())}")
                     final_session_data_obj = ScrapedSessionResponse(**session_data_for_model)
+                    print(f"✓ Successfully created ScrapedSessionResponse")
                 except Exception as e: # Catch Pydantic validation error
-                    print(f"Pydantic validation error for session {session_data_for_model.get('id')}: {e}")
-                    # Optionally, log session_data_for_model here to debug
+                    print(f"✗ Pydantic validation error for session {session_data_for_model.get('id')}: {e}")
+                    print(f"Session data for debugging: {session_data_for_model}")
+                    # Continue without the session data rather than failing completely
+                    final_session_data_obj = None
             
+            print(f"Adding result with latest_scrape_data: {type(final_session_data_obj)}")
+            if final_session_data_obj:
+                print(f"Session object has raw_markdown: {bool(getattr(final_session_data_obj, 'markdown_content', None))}")
+                print(f"Session object has structured_data: {bool(getattr(final_session_data_obj, 'structured_data', None))}")
+
             results.append({
                 **pu_data_cleaned,
                 "latest_scrape_data": final_session_data_obj
@@ -214,6 +238,15 @@ class ScrapingService:
 
         # Extract parameters from the request
         current_page_url = request.current_page_url
+
+        # Validate URL format
+        if not current_page_url or not isinstance(current_page_url, str):
+            raise HTTPException(status_code=400, detail="URL is required and must be a valid string")
+
+        # Basic URL validation
+        if not (current_page_url.startswith('http://') or current_page_url.startswith('https://')):
+            raise HTTPException(status_code=400, detail="URL must start with http:// or https://")
+
         # session_id from request is for interactive scraping, we'll generate a new one for this execution
         api_keys = request.api_keys
         force_refresh = request.force_refresh

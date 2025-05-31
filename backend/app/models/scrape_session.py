@@ -30,6 +30,24 @@ class ScrapedSessionResponse(ScrapedSessionBase):
     fields: Optional[List[str]] = None  # List of fields extracted
     formatted_tabular_data: Optional[Dict[str, Any]] = None  # Data formatted according to display_format
 
+    class Config:
+        from_attributes = True
+
+class ProjectUrlWithSessionResponse(BaseModel):
+    """Model for project URL with its latest scrape session data."""
+    # Project URL fields
+    id: UUID
+    project_id: UUID
+    url: HttpUrl
+    conditions: Optional[str] = None
+    display_format: Optional[str] = "table"
+    created_at: Optional[datetime] = None
+    status: Optional[str] = "pending"
+    rag_enabled: Optional[bool] = False
+    last_scraped_session_id: Optional[UUID] = None
+
+    # Latest scrape session data
+    latest_scrape_data: Optional[ScrapedSessionResponse] = None
 
     class Config:
         from_attributes = True

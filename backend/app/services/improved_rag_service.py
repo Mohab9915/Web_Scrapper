@@ -77,7 +77,45 @@ class ImprovedRAGService:
             raise Exception("Project not found")
         if not project_response.data["rag_enabled"]:
             raise Exception("RAG is not enabled for this project")
+        # Look for sessions with 'rag_ingested' status first, but also accept 'scraped' sessions if project has RAG enabled
         sessions_response = supabase.table("scrape_sessions").select("unique_scrape_identifier").eq("project_id", str(project_id)).eq("status", "rag_ingested").execute()
+
+        # If no rag_ingested sessions found, check if project has RAG enabled and look for scraped sessions
+        if not sessions_response.data:
+            # Check if project has RAG enabled
+            project_response = supabase.table("projects").select("rag_enabled").eq("id", str(project_id)).single().execute()
+            project_rag_enabled = project_response.data.get("rag_enabled", False) if project_response.data else False
+
+            if project_rag_enabled:
+                # If RAG is enabled, also accept 'scraped' sessions as they contain the data needed for RAG
+                sessions_response = supabase.table("scrape_sessions").select("unique_scrape_identifier").eq("project_id", str(project_id)).eq("status", "scraped").execute()
+
+        # Check if the found sessions actually have embeddings
+        # If not, fall back to existing embeddings for this project
+        if sessions_response.data:
+            # Check if any of the found sessions have embeddings
+            session_unique_names = [s["unique_scrape_identifier"] for s in sessions_response.data]
+            embeddings_check = supabase.table("embeddings").select("unique_name").in_("unique_name", session_unique_names).execute()
+
+            if not embeddings_check.data:
+                # No embeddings for current sessions, look for any embeddings for this project
+                all_embeddings_response = supabase.table("embeddings").select("unique_name").execute()
+                project_embeddings = [e for e in all_embeddings_response.data if str(project_id) in e['unique_name']]
+
+                if project_embeddings:
+                    # Replace sessions with the ones that have embeddings
+                    sessions_response.data = [{"unique_scrape_identifier": e['unique_name']} for e in project_embeddings]
+
+        # If still no sessions found, check if there are any embeddings for this project at all
+        if not sessions_response.data:
+            # Check for any embeddings that belong to this project
+            all_embeddings_response = supabase.table("embeddings").select("unique_name").execute()
+            project_embeddings = [e for e in all_embeddings_response.data if str(project_id) in e['unique_name']]
+
+            if project_embeddings:
+                # Create a mock sessions response with the embedding unique names
+                sessions_response.data = [{"unique_scrape_identifier": e['unique_name']} for e in project_embeddings]
+
         if not sessions_response.data:
             raise Exception("No RAG-processed data available for this project")
         unique_names = [session["unique_scrape_identifier"] for session in sessions_response.data]
@@ -242,7 +280,46 @@ class ImprovedRAGService:
             raise Exception("Project not found")
         if not project_response.data["rag_enabled"]:
             raise Exception("RAG is not enabled for this project") # This could also return a RAGQueryResponse
+        # Look for sessions with 'rag_ingested' status first, but also accept 'scraped' sessions if project has RAG enabled
         sessions_response = supabase.table("scrape_sessions").select("unique_scrape_identifier").eq("project_id", str(project_id)).eq("status", "rag_ingested").execute()
+
+        # If no rag_ingested sessions found, check if project has RAG enabled and look for scraped sessions
+        if not sessions_response.data:
+            # Project RAG setting was already checked above, so we know it's enabled
+            # If RAG is enabled, also accept 'scraped' sessions as they contain the data needed for RAG
+            sessions_response = supabase.table("scrape_sessions").select("unique_scrape_identifier").eq("project_id", str(project_id)).eq("status", "scraped").execute()
+            logger.info(f"DEBUG: RAG enabled project, found {len(sessions_response.data)} scraped sessions")
+
+        # Check if the found sessions actually have embeddings
+        # If not, fall back to existing embeddings for this project
+        if sessions_response.data:
+            # Check if any of the found sessions have embeddings
+            session_unique_names = [s["unique_scrape_identifier"] for s in sessions_response.data]
+            embeddings_check = supabase.table("embeddings").select("unique_name").in_("unique_name", session_unique_names).execute()
+
+            if not embeddings_check.data:
+                logger.info(f"DEBUG: Found sessions but no embeddings for them, looking for existing embeddings")
+                # No embeddings for current sessions, look for any embeddings for this project
+                all_embeddings_response = supabase.table("embeddings").select("unique_name").execute()
+                project_embeddings = [e for e in all_embeddings_response.data if str(project_id) in e['unique_name']]
+
+                if project_embeddings:
+                    logger.info(f"DEBUG: Found {len(project_embeddings)} existing embeddings for project, using those for RAG")
+                    # Replace sessions with the ones that have embeddings
+                    sessions_response.data = [{"unique_scrape_identifier": e['unique_name']} for e in project_embeddings]
+
+        # If still no sessions found, check if there are any embeddings for this project at all
+        # This handles the case where old embeddings exist but current sessions don't have embeddings yet
+        if not sessions_response.data:
+            # Check for any embeddings that belong to this project
+            all_embeddings_response = supabase.table("embeddings").select("unique_name").execute()
+            project_embeddings = [e for e in all_embeddings_response.data if str(project_id) in e['unique_name']]
+
+            if project_embeddings:
+                logger.info(f"DEBUG: Found {len(project_embeddings)} existing embeddings for project, using those for RAG")
+                # Create a mock sessions response with the embedding unique names
+                sessions_response.data = [{"unique_scrape_identifier": e['unique_name']} for e in project_embeddings]
+
         if not sessions_response.data:
             logger.warning(f"No RAG-processed data available for project {project_id} when querying.")
             return RAGQueryResponse(

@@ -13,18 +13,31 @@ class ProjectService:
 
     async def get_all_projects(self) -> List[ProjectResponse]:
         """
-        Get all projects.
+        Get all projects with optimized session count query.
 
         Returns:
             List[ProjectResponse]: List of projects
         """
+        # Fetch all projects
         response = supabase.table("projects").select("*").execute()
         projects = response.data
 
-        # Get scraped sessions count for each project
+        if not projects:
+            return []
+
+        # OPTIMIZED: Get session counts for all projects in a single query
+        project_ids = [project["id"] for project in projects]
+        sessions_response = supabase.table("scrape_sessions").select("project_id").in_("project_id", project_ids).execute()
+
+        # Count sessions per project
+        session_counts = {}
+        for session in sessions_response.data:
+            project_id = session["project_id"]
+            session_counts[project_id] = session_counts.get(project_id, 0) + 1
+
+        # Process each project with the session count
         for project in projects:
-            sessions_response = supabase.table("scrape_sessions").select("id").eq("project_id", project["id"]).execute()
-            project["scraped_sessions_count"] = len(sessions_response.data)
+            project["scraped_sessions_count"] = session_counts.get(project["id"], 0)
             project["rag_status"] = "Enabled" if project["rag_enabled"] else "Disabled"
 
             # Ensure caching_enabled is present (for backward compatibility)

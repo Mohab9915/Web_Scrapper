@@ -327,12 +327,14 @@ export async function queryRagApi(projectId, userMessage, modelName) {
  * Get chat messages for a project/conversation
  */
 export async function getChatMessages(projectId, conversationId = null) {
-  let url = `${API_URL}/projects/${projectId}/chat`;
+  let url = `/api/v1/projects/${projectId}/chat`;
   if (conversationId) {
     url += `?conversation_id=${conversationId}`;
   }
   return fetchWithErrorHandling(url);
 }
+
+
 
 /**
  * Send a chat message and get a response

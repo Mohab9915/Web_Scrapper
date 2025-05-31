@@ -6,23 +6,23 @@ from typing import List
 from uuid import UUID
 
 from ..models.scrape_session import (
-    ScrapedSessionResponse, InteractiveScrapingInitiate,
+    ScrapedSessionResponse, ProjectUrlWithSessionResponse, InteractiveScrapingInitiate,
     InteractiveScrapingResponse, ExecuteScrapeRequest, ExecuteScrapeResponse
 )
 from ..services.scraping_service import ScrapingService
 
 router = APIRouter(tags=["scraping"])
 
-@router.get("/projects/{project_id}/sessions", response_model=List[ScrapedSessionResponse])
+@router.get("/projects/{project_id}/sessions", response_model=List[ProjectUrlWithSessionResponse])
 async def get_scraped_sessions(project_id: UUID, scraping_service: ScrapingService = Depends()):
     """
-    Get all scraped sessions for a project.
+    Get all project URLs with their latest scrape session data.
 
     Args:
         project_id (UUID): Project ID
 
     Returns:
-        List[ScrapedSessionResponse]: List of scraped sessions
+        List[ProjectUrlWithSessionResponse]: List of project URLs with session data
     """
     return await scraping_service.get_sessions_by_project(project_id)
 

@@ -81,9 +81,35 @@ class RAGService:
             raise HTTPException(status_code=400, detail="RAG is not enabled for this project")
 
         # Get all unique scrape identifiers for this project
-        sessions_response = supabase.table("scrape_sessions").select("unique_scrape_identifier").eq("project_id", str(project_id)).eq("status", "rag_ingested").execute()
+        # Look for sessions with 'rag_ingested' status first, but also accept 'scraped' sessions if project has RAG enabled
+        sessions_response = supabase.table("scrape_sessions").select("unique_scrape_identifier, status, url").eq("project_id", str(project_id)).eq("status", "rag_ingested").execute()
+
+        # If no rag_ingested sessions found, check if project has RAG enabled and look for scraped sessions
         if not sessions_response.data:
-            raise HTTPException(status_code=400, detail="No RAG-processed data available for this project")
+            # Check if project has RAG enabled
+            project_response = supabase.table("projects").select("rag_enabled").eq("id", str(project_id)).single().execute()
+            project_rag_enabled = project_response.data.get("rag_enabled", False) if project_response.data else False
+
+            if project_rag_enabled:
+                # If RAG is enabled, also accept 'scraped' sessions as they contain the data needed for RAG
+                sessions_response = supabase.table("scrape_sessions").select("unique_scrape_identifier, status, url").eq("project_id", str(project_id)).eq("status", "scraped").execute()
+                print(f"DEBUG: RAG enabled project, found {len(sessions_response.data)} scraped sessions")
+
+        # Debug: Check all sessions for this project
+        all_sessions_response = supabase.table("scrape_sessions").select("id, status, url, unique_scrape_identifier").eq("project_id", str(project_id)).execute()
+        print(f"DEBUG: All sessions for project {project_id}:")
+        for session in all_sessions_response.data:
+            print(f"  Session {session['id']}: status={session['status']}, url={session['url']}, unique_id={session.get('unique_scrape_identifier', 'None')}")
+
+        if not sessions_response.data:
+            # Check if there are any sessions at all
+            if not all_sessions_response.data:
+                error_msg = "No scraped data found for this project. Please scrape some URLs first."
+            else:
+                scraped_count = len([s for s in all_sessions_response.data if s['status'] == 'scraped'])
+                rag_ingested_count = len([s for s in all_sessions_response.data if s['status'] == 'rag_ingested'])
+                error_msg = f"No RAG-processed data available for this project. Found {len(all_sessions_response.data)} total sessions ({scraped_count} scraped, {rag_ingested_count} rag-ingested). Please ensure RAG is enabled and Azure OpenAI credentials are configured."
+            raise HTTPException(status_code=400, detail=error_msg)
 
         unique_names = [session["unique_scrape_identifier"] for session in sessions_response.data]
 
