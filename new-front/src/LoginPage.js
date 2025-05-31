@@ -50,29 +50,34 @@ function LoginPage({ onLogin }) {
       
       {/* Left side - login form */}
       <div className="flex-1 flex items-center justify-center relative z-10">
-        <div className="w-full max-w-md p-8 rounded-lg bg-purple-800 bg-opacity-70 shadow-xl border border-purple-600">
+        <div className="w-full max-w-md p-8 rounded-2xl glass-dark shadow-2xl border border-purple-500/30 animate-fadeIn">
           <div className="flex justify-center mb-6">
-            <Globe className="text-purple-300" size={40} />
+            <div className="p-3 rounded-full bg-gradient-to-r from-purple-600 to-indigo-600 shadow-lg">
+              <Globe className="text-white" size={32} />
+            </div>
           </div>
-          
-          <h2 className="text-3xl font-bold text-center text-purple-200 mb-6">
+
+          <h2 className="text-3xl font-bold text-center text-white mb-2">
             {isSignUp ? "Create Account" : "Welcome Back"}
           </h2>
+          <p className="text-center text-purple-300 mb-6">
+            {isSignUp ? "Join our web scraping platform" : "Sign in to your account"}
+          </p>
           
           {!isSignUp ? (
             // Login Form
             <form onSubmit={handleLogin}>
               <div className="mb-4">
-                <label className="block text-purple-300 text-sm mb-2">Email</label>
+                <label className="block text-purple-200 text-sm font-medium mb-2">Email</label>
                 <div className="relative">
                   <div className="absolute left-3 top-3 text-purple-400">
                     <Mail size={18} />
                   </div>
-                  <input 
-                    type="email" 
+                  <input
+                    type="email"
                     value={loginEmail}
                     onChange={(e) => setLoginEmail(e.target.value)}
-                    className="w-full p-3 pl-10 rounded-lg bg-purple-700 border border-purple-600 text-white placeholder-purple-400 focus:outline-none focus:ring-2 focus:ring-purple-400"
+                    className="input-primary pl-10"
                     placeholder="your@email.com"
                     required
                   />
@@ -80,30 +85,30 @@ function LoginPage({ onLogin }) {
               </div>
               
               <div className="mb-6">
-                <label className="block text-purple-300 text-sm mb-2">Password</label>
+                <label className="block text-purple-200 text-sm font-medium mb-2">Password</label>
                 <div className="relative">
                   <div className="absolute left-3 top-3 text-purple-400">
                     <Lock size={18} />
                   </div>
-                  <input 
-                    type="password" 
+                  <input
+                    type="password"
                     value={loginPassword}
                     onChange={(e) => setLoginPassword(e.target.value)}
-                    className="w-full p-3 pl-10 rounded-lg bg-purple-700 border border-purple-600 text-white placeholder-purple-400 focus:outline-none focus:ring-2 focus:ring-purple-400"
+                    className="input-primary pl-10"
                     placeholder="••••••••"
                     required
                   />
                 </div>
                 <div className="mt-2 text-right">
-                  <a href="#" className="text-sm text-purple-300 hover:text-purple-200">Forgot password?</a>
+                  <a href="#" className="text-sm text-purple-300 hover:text-purple-200 transition-colors">Forgot password?</a>
                 </div>
               </div>
-              
-              <button 
-                type="submit" 
-                className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 rounded-lg font-medium transition-colors"
+
+              <button
+                type="submit"
+                className="btn-primary w-full py-3 text-lg font-semibold"
               >
-                Log In
+                Sign In
               </button>
               
               <div className="mt-6 text-center">

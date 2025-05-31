@@ -24,6 +24,7 @@ class ProjectResponse(ProjectBase):
     """Model for project response."""
     id: UUID
     created_at: datetime
+    rag_enabled: bool  # Boolean field for frontend compatibility
     rag_status: str  # 'Enabled', 'Disabled', 'Enabling'
     scraped_sessions_count: int
     caching_enabled: bool = True  # Default to True for backward compatibility

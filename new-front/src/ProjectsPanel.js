@@ -50,20 +50,23 @@ function ProjectsPanel({ projects, onAddProject, onSelectProject, onDeleteProjec
     <div className="flex-1 p-6 overflow-auto">
       <h2 className="text-2xl font-semibold text-purple-200 mb-6">Your Projects</h2>
 
-      <div className="bg-purple-800 bg-opacity-60 p-4 rounded-lg shadow-lg mb-8 border border-purple-700">
-        <h3 className="text-lg font-medium text-purple-200 mb-3">Create New Project</h3>
+      <div className="glass-dark p-6 rounded-xl shadow-xl mb-8 border border-purple-500/30 animate-fadeIn">
+        <h3 className="text-xl font-semibold text-white mb-4 flex items-center gap-2">
+          <FolderPlus size={20} className="text-indigo-400" />
+          Create New Project
+        </h3>
         <div className="flex space-x-3">
           <input
             type="text"
             value={newProjectName}
             onChange={(e) => setNewProjectName(e.target.value)}
             placeholder="Enter project name"
-            className="flex-grow p-2 rounded-md bg-purple-700 border border-purple-600 text-white placeholder-purple-400 focus:outline-none focus:ring-2 focus:ring-purple-400"
+            className="input-primary flex-grow"
             onKeyPress={(e) => e.key === 'Enter' && handleAdd()}
           />
           <button
             onClick={handleAdd}
-            className="flex items-center space-x-2 px-4 py-2 bg-purple-600 hover:bg-purple-500 text-white rounded-md transition-colors disabled:bg-purple-800 disabled:text-purple-500 disabled:cursor-not-allowed"
+            className="btn-primary flex items-center space-x-2 px-6 py-2 disabled:opacity-50 disabled:cursor-not-allowed"
             disabled={!newProjectName.trim()}
           >
             <FolderPlus size={18} />
@@ -73,24 +76,24 @@ function ProjectsPanel({ projects, onAddProject, onSelectProject, onDeleteProjec
       </div>
 
       {projects.length === 0 ? (
-        <div className="text-center text-purple-300 py-10">
-          <FolderIcon size={48} className="mx-auto mb-4 text-purple-400" />
-          <p className="text-lg">No projects yet.</p>
-          <p>Create your first project to get started!</p>
+        <div className="text-center text-purple-300 py-16 animate-fadeIn">
+          <FolderIcon size={64} className="mx-auto mb-6 text-purple-400" />
+          <p className="text-xl font-medium mb-2">No projects yet</p>
+          <p className="text-purple-400">Create your first project to get started!</p>
         </div>
       ) : (
         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6">
-          {projects.map(project => {
+          {projects.map((project, index) => {
             const isEditing = editingProjectId === project.id;
             const { text: ragText, Icon: RagIcon, color: ragColor, bgColor: ragBgColor } = getRagStatusDisplay(project.ragStatus);
 
             return (
               <div
                 key={project.id}
-                className={`bg-purple-800 bg-opacity-70 rounded-lg shadow-lg flex flex-col justify-between aspect-square
-                            border-2 transition-all duration-200 ease-in-out group
-                            hover:shadow-purple-500/40 hover:border-purple-500
-                            ${activeProjectId === project.id ? 'border-indigo-500 ring-2 ring-indigo-500 shadow-indigo-500/50' : 'border-purple-700'}`}
+                className={`glass-dark rounded-xl shadow-xl flex flex-col justify-between aspect-square
+                            border-2 transition-all duration-300 ease-in-out group card-hover animate-fadeIn
+                            ${activeProjectId === project.id ? 'border-indigo-500 ring-2 ring-indigo-500 shadow-indigo-500/50' : 'border-purple-600/50 hover:border-purple-500'}`}
+                style={{ animationDelay: `${index * 0.1}s` }}
               >
                 {isEditing ? (
                   <div className="p-4 flex flex-col h-full">

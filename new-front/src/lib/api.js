@@ -60,6 +60,8 @@ const AZURE_CHAT_MODEL = "gpt-4o-mini";
  */
 async function fetchWithErrorHandling(url, options) {
   try {
+    console.log('🔄 Making API request to:', url);
+    console.log('📤 Request options:', options);
     const response = await fetch(url, options);
 
     if (!response.ok) {
@@ -108,25 +110,33 @@ async function fetchWithErrorHandling(url, options) {
     }
 
     // Check if response is empty and handle JSON parsing errors
+    let text = '';
     try {
       // Get response text first
-      const text = await response.text();
+      text = await response.text();
+      console.log('📥 Raw response text (first 500 chars):', text.substring(0, 500));
 
       // If empty response, return empty object
       if (!text || text.trim() === '') {
-        console.warn('Empty response received from API');
+        console.warn('⚠️ Empty response received from API');
         return {};
       }
 
       // Parse JSON and transform snake_case keys to camelCase
       const data = JSON.parse(text);
-      return transformKeys(data);
+      console.log('📊 Parsed JSON data:', data);
+      
+      const transformedData = transformKeys(data);
+      console.log('🔄 Transformed data:', transformedData);
+      
+      return transformedData;
     } catch (jsonError) {
-      console.error('Error parsing JSON response:', jsonError);
+      console.error('❌ Error parsing JSON response:', jsonError);
+      console.error('📄 Response text that failed to parse:', text);
       return {};
     }
   } catch (error) {
-    console.error('API request failed:', error);
+    console.error('❌ API request failed:', error);
     throw error;
   }
 }
@@ -238,8 +248,17 @@ export async function executeScrape(projectId, url, sessionId, forceRefresh = fa
   // Get the latest Azure OpenAI credentials
   const credentials = getAzureOpenAICredentials();
   
+  console.log('🚀 Starting scrape execution with params:', {
+    projectId,
+    url,
+    sessionId: finalSessionId,
+    forceRefresh,
+    displayFormat,
+    conditions
+  });
+
   // Include Azure OpenAI credentials for embedding generation
-  return fetchWithErrorHandling(
+  const rawResult = await fetchWithErrorHandling(
     `${API_URL}/projects/${projectId}/execute-scrape`,
     {
       method: 'POST',
@@ -257,6 +276,16 @@ export async function executeScrape(projectId, url, sessionId, forceRefresh = fa
       }),
     }
   );
+
+  console.log('📦 Raw result from API:', rawResult);
+  console.log('📊 Raw result keys:', Object.keys(rawResult));
+  console.log('🔍 Checking for tabular data in different formats:');
+  console.log('  - rawResult.tabularData:', rawResult.tabularData);
+  console.log('  - rawResult.tabular_data:', rawResult.tabular_data);
+  console.log('  - rawResult.fields:', rawResult.fields);
+  console.log('  - rawResult.formatted_data:', rawResult.formatted_data);
+
+  return rawResult;
 }
 
 /**

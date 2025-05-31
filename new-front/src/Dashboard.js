@@ -9,11 +9,13 @@ import ProjectsPanel from './ProjectsPanel';
 import RagPromptModal from './RagPromptModal';
 import ConfirmationModal from './ConfirmationModal';
 import { executeScrape, sendChatMessage, getProjectConversations, createConversation, deleteConversation, getConversationMessages } from './lib/api';
+import { useToast } from './components/Toast';
 
 function WebScrapingDashboard() {
   const [projects, setProjects] = useState([]);
   const [activeProjectId, setActiveProjectId] = useState(null);
   const activeProject = projects.find(p => p.id === activeProjectId);
+  const toast = useToast();
 
   // Add loading state
   const [isLoading, setIsLoading] = useState(false);
@@ -43,22 +45,61 @@ function WebScrapingDashboard() {
         const formattedProjects = data.map(project => ({
           id: project.id,
           name: project.name,
-          // Initialize with empty arrays for new projects
+          // Initialize with empty arrays for new projects - will be populated by fetchProjectUrls
           urls: [],
           scrapingResults: null,
           isScrapingError: false,
           errorMessage: '',
-          // Use null to ensure "No history" message shows correctly
+          // Use null to ensure "No history" message shows correctly - will be populated by fetchScrapingSessions
           history: null,
           createdAt: project.created_at,
-          ragStatus: project.rag_enabled ? 'enabled' : 'unprompted',
+          // Fix RAG status logic: if rag_enabled is true, set to 'enabled', otherwise 'disabled'
+          ragStatus: project.rag_enabled ? 'enabled' : 'disabled',
         }));
 
         setProjects(formattedProjects);
-        setIsLoading(false);
 
-        // Note: We don't fetch scraping sessions here anymore since activeProjectId
-        // might not be set yet. The sessions will be fetched when a project is selected.
+        // Show toast notification about loading project data
+        if (formattedProjects.length > 0) {
+          toast.info('Loading project data...', 'Fetching URLs and history');
+        }
+
+        // Load URL and session data for all projects to show correct counts
+        await Promise.all(formattedProjects.map(async (project) => {
+          try {
+            // Fetch URLs for this project
+            const urlsResponse = await fetch(`http://localhost:8000/api/v1/projects/${project.id}/urls`);
+            if (urlsResponse.ok) {
+              const urls = await urlsResponse.json();
+
+              // Fetch sessions for this project
+              const sessionsResponse = await fetch(`http://localhost:8000/api/v1/projects/${project.id}/sessions`);
+              const sessions = sessionsResponse.ok ? await sessionsResponse.json() : [];
+
+              // Update project with actual data
+              setProjects(prevProjects =>
+                prevProjects.map(p =>
+                  p.id === project.id
+                    ? {
+                        ...p,
+                        urls: urls || [],
+                        history: sessions && sessions.length > 0 ? sessions : null
+                      }
+                    : p
+                )
+              );
+            }
+          } catch (error) {
+            console.error(`Error loading data for project ${project.id}:`, error);
+          }
+        }));
+
+        // Show success toast when data is loaded
+        if (formattedProjects.length > 0) {
+          toast.success('Project data loaded successfully');
+        }
+
+        setIsLoading(false);
       } catch (error) {
         console.error('Error fetching projects:', error);
         setIsLoading(false);
@@ -199,7 +240,7 @@ function WebScrapingDashboard() {
         errorMessage: '',
         history: null, // Use null instead of empty array to show "No history" message
         createdAt: new Date().toISOString(),
-        ragStatus: data.rag_enabled ? 'enabled' : 'unprompted',
+        ragStatus: data.rag_enabled ? 'enabled' : 'disabled',
       };
 
       setProjects(prevProjects => [...prevProjects, newProject]);
@@ -474,27 +515,29 @@ function WebScrapingDashboard() {
     setIsRagPromptModalOpen(false);
     setProjectToPromptRagId(null);
 
-    if (decision === 'enabled') {
-      console.log(`RAG enabled for project ${projectId}. All existing and future data will be considered for RAG.`);
+    // Call the backend API to update the project's RAG status
+    try {
+      const ragEnabled = decision === 'enabled';
 
-      // Call the backend API to update the project's RAG status
-      try {
-        // First, enable RAG at the project level
-        const response = await fetch(`http://localhost:8000/api/v1/projects/${projectId}`, {
-          method: 'PUT',
-          headers: {
-            'Content-Type': 'application/json',
-          },
-          body: JSON.stringify({
-            rag_enabled: true
-          }),
-        });
+      // Update RAG status at the project level
+      const response = await fetch(`http://localhost:8000/api/v1/projects/${projectId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          rag_enabled: ragEnabled
+        }),
+      });
 
-        if (!response.ok) {
-          throw new Error('Failed to update RAG status');
-        }
+      if (!response.ok) {
+        throw new Error('Failed to update RAG status');
+      }
 
-        // Then, call the enable-rag endpoint to process the data
+      if (ragEnabled) {
+        console.log(`RAG enabled for project ${projectId}. All existing and future data will be considered for RAG.`);
+
+        // Call the enable-rag endpoint to process the data
         const ragResponse = await fetch(`http://localhost:8000/api/v1/projects/${projectId}/enable-rag`, {
           method: 'POST'
         });
@@ -505,17 +548,21 @@ function WebScrapingDashboard() {
 
         // Fetch sessions to update UI
         fetchScrapingSessions(projectId);
-      } catch (error) {
-        console.error('Error setting up RAG:', error);
-        // Revert the local state since the operation failed
-        updateProjectById(projectId, { ragStatus: 'disabled' });
+      } else {
+        console.log(`RAG disabled for project ${projectId}.`);
       }
+    } catch (error) {
+      console.error('Error updating RAG status:', error);
+      // Revert the local state since the operation failed
+      const revertStatus = decision === 'enabled' ? 'disabled' : 'enabled';
+      updateProjectById(projectId, { ragStatus: revertStatus });
     }
   };
 
-  const handleSendMessage = async (userMessage, modelName, addSystemResponseCallback) => {
+  const handleSendMessage = async (userMessage, modelName, callback) => {
     if (!activeProject || activeProject.ragStatus !== 'enabled') {
       console.log('RAG not enabled for this project, cannot send message');
+      if (callback) callback();
       return;
     }
 
@@ -527,6 +574,7 @@ function WebScrapingDashboard() {
       console.log('New conversation created with ID:', conversationIdToUse);
       if (!conversationIdToUse) {
         console.error('Failed to create a new conversation');
+        if (callback) callback();
         return;
       }
     }
@@ -534,10 +582,10 @@ function WebScrapingDashboard() {
     try {
       console.log('Sending message with conversation ID:', conversationIdToUse);
       console.log('Message content:', userMessage);
-      
+
       // Set the current conversation ID
       setCurrentConversationId(conversationIdToUse);
-      
+
       // Update UI immediately with user message
       const tempUserMessage = {
         id: 'temp-' + Date.now(),
@@ -546,34 +594,26 @@ function WebScrapingDashboard() {
         timestamp: new Date()
       };
       setChatMessages(prev => [...prev, tempUserMessage]);
-      
-      // Also add a placeholder for the assistant response
-      const tempAssistantMessage = {
-        id: 'temp-assistant-' + Date.now(),
-        role: 'assistant',
-        content: 'Thinking...',
-        timestamp: new Date(),
-        isLoading: true
-      };
-      setChatMessages(prev => [...prev, tempAssistantMessage]);
-      
+
       // Send the message using the new chat API
       const response = await sendChatMessage(
-        activeProjectId, 
-        userMessage, 
+        activeProjectId,
+        userMessage,
         conversationIdToUse, // Use the locally tracked conversation ID
         null // session_id - can be added later if needed
       );
-      
+
       console.log('Response from sendChatMessage:', response);
-      
+
       // Reload chat messages to get the latest conversation
       await loadChatMessages(conversationIdToUse);
-      
+
+      // Call the callback to hide typing indicator
+      if (callback) callback();
+
     } catch (error) {
       console.error('Error sending message:', error);
-      // Remove the loading message and add an error message
-      setChatMessages(prev => prev.filter(msg => !msg.isLoading));
+      // Add an error message
       setChatMessages(prev => [...prev, {
         id: 'error-' + Date.now(),
         role: 'system',
@@ -581,6 +621,9 @@ function WebScrapingDashboard() {
         timestamp: new Date(),
         isError: true
       }]);
+
+      // Call the callback to hide typing indicator
+      if (callback) callback();
     }
   };
 
@@ -1285,28 +1328,37 @@ function WebScrapingDashboard() {
 
   return (
     <div className="flex flex-col h-screen bg-purple-900 text-white">
-      <header className="bg-purple-800 p-4 shadow-lg border-b border-purple-600">
+      <header className="glass-dark border-b border-purple-500/30 p-4 shadow-2xl">
         <div className="flex items-center justify-between">
-          <div className="flex items-center space-x-2">
-            <Folder className="text-purple-300" size={24} />
-            <h1 className="text-2xl font-bold text-purple-200">
-                Web Scraper {activeProject ? `/ ${activeProject.name}` : '/ Projects'}
-            </h1>
+          <div className="flex items-center space-x-3">
+            <div className="p-2 rounded-lg bg-gradient-to-r from-purple-600 to-indigo-600 shadow-lg">
+              <Folder className="text-white" size={24} />
+            </div>
+            <div>
+              <h1 className="text-2xl font-bold text-white">
+                Web Scraper
+              </h1>
+              {activeProject && (
+                <p className="text-sm text-purple-300">
+                  {activeProject.name}
+                </p>
+              )}
+            </div>
           </div>
           <div className="flex items-center space-x-4">
             <div className="relative">
               <button
                 onClick={() => setIsModelDropdownOpen(!isModelDropdownOpen)}
-                className="bg-purple-700 hover:bg-purple-600 p-2 rounded-lg flex items-center space-x-2"
+                className="btn-secondary flex items-center space-x-2 px-4 py-2"
               >
-                <Database size={16} className="text-purple-300 mr-1" />
+                <Database size={16} className="text-purple-300" />
                 <span>AI: {getSelectedModelName()}</span>
-                <ChevronDown size={16} />
+                <ChevronDown size={16} className={`transition-transform ${isModelDropdownOpen ? 'rotate-180' : ''}`} />
               </button>
               {isModelDropdownOpen && (
-                <div className="absolute right-0 mt-2 w-64 bg-purple-800 rounded-lg shadow-xl border border-purple-600 z-20">
-                  <div className="p-2">
-                    <h3 className="text-sm font-semibold text-purple-300 mb-2 px-2">Select AI Model</h3>
+                <div className="absolute right-0 mt-2 w-64 glass-dark rounded-xl shadow-2xl border border-purple-500/30 z-20 animate-fadeIn">
+                  <div className="p-3">
+                    <h3 className="text-sm font-semibold text-white mb-3 px-2">Select AI Model</h3>
                     {aiModels.map(model => (
                       <button
                         key={model.id}
@@ -1314,13 +1366,13 @@ function WebScrapingDashboard() {
                           setSelectedAiModel(model.id);
                           setIsModelDropdownOpen(false);
                         }}
-                        className={`w-full text-left p-2 rounded-md flex flex-col ${
+                        className={`w-full text-left p-3 rounded-lg flex flex-col transition-all duration-200 ${
                           selectedAiModel === model.id
-                            ? 'bg-indigo-700'
-                            : 'hover:bg-purple-700'
+                            ? 'bg-indigo-600/50 border border-indigo-500'
+                            : 'hover:bg-purple-700/50 border border-transparent'
                         }`}
                       >
-                        <span className="font-medium">{model.name}</span>
+                        <span className="font-medium text-white">{model.name}</span>
                         <span className="text-xs text-purple-300">{model.description}</span>
                       </button>
                     ))}
@@ -1331,53 +1383,69 @@ function WebScrapingDashboard() {
             <button
               onClick={openSettingsModal}
               data-settings-button
-              className="bg-purple-700 hover:bg-purple-600 p-2 rounded-lg flex items-center space-x-2"
+              className="btn-secondary flex items-center space-x-2 px-4 py-2"
             >
               <Settings size={18} />
               <span>Settings</span>
             </button>
-            <div className="relative w-8 h-8 bg-purple-500 rounded-full flex items-center justify-center">
-              <span className="font-bold">U</span>
+            <div className="relative w-10 h-10 bg-gradient-to-r from-purple-600 to-indigo-600 rounded-full flex items-center justify-center shadow-lg">
+              <span className="font-bold text-white">U</span>
             </div>
           </div>
         </div>
       </header>
 
       <div className="flex-1 flex overflow-hidden">
-        <div className="w-16 bg-purple-800 flex flex-col items-center py-4 border-r border-purple-700">
+        <div className="w-16 glass-dark flex flex-col items-center py-4 border-r border-purple-500/30">
           <button
             onClick={navigateToProjects}
-            className={`p-3 rounded-lg mb-4 ${activeTab === 'projects' && !activeProjectId ? 'bg-purple-600' : 'hover:bg-purple-700'}`}
+            className={`p-3 rounded-xl mb-4 transition-all duration-200 ${
+              activeTab === 'projects' && !activeProjectId
+                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 shadow-lg'
+                : 'hover:bg-purple-700/50'
+            }`}
             title="Projects"
           >
-            <Home size={20} className="text-purple-200" />
+            <Home size={20} className="text-white" />
           </button>
           <button
             onClick={() => activeProjectId ? setActiveTab('urls') : alert("Please select or create a project first.")}
-            className={`p-3 rounded-lg mb-4 ${activeTab === 'urls' && activeProjectId ? 'bg-purple-600' : 'hover:bg-purple-700'} ${!activeProjectId ? 'opacity-50 cursor-not-allowed' : ''}`}
+            className={`p-3 rounded-xl mb-4 transition-all duration-200 ${
+              activeTab === 'urls' && activeProjectId
+                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 shadow-lg'
+                : 'hover:bg-purple-700/50'
+            } ${!activeProjectId ? 'opacity-50 cursor-not-allowed' : ''}`}
             title="URL Management"
             disabled={!activeProjectId}
           >
-            <Globe size={20} className="text-purple-200" />
+            <Globe size={20} className="text-white" />
           </button>
           <button
             onClick={() => activeProjectId ? setActiveTab('chat') : alert("Please select or create a project first.")}
-            className={`p-3 rounded-lg mb-4 ${activeTab === 'chat' && activeProjectId ? 'bg-purple-600' : 'hover:bg-purple-700'} ${!activeProjectId ? 'opacity-50 cursor-not-allowed' : ''}`}
+            className={`p-3 rounded-xl mb-4 transition-all duration-200 ${
+              activeTab === 'chat' && activeProjectId
+                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 shadow-lg'
+                : 'hover:bg-purple-700/50'
+            } ${!activeProjectId ? 'opacity-50 cursor-not-allowed' : ''}`}
              title="Chat"
              disabled={!activeProjectId}
           >
-            <MessageCircle size={20} className="text-purple-200" />
+            <MessageCircle size={20} className="text-white" />
           </button>
           <button
             onClick={() => activeProjectId ? setActiveTab('history') : alert("Please select or create a project first.")}
-            className={`p-3 rounded-lg mb-4 ${activeTab === 'history' && activeProjectId ? 'bg-purple-600' : 'hover:bg-purple-700'} ${!activeProjectId ? 'opacity-50 cursor-not-allowed' : ''}`}
+            className={`p-3 rounded-xl mb-4 transition-all duration-200 ${
+              activeTab === 'history' && activeProjectId
+                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 shadow-lg'
+                : 'hover:bg-purple-700/50'
+            } ${!activeProjectId ? 'opacity-50 cursor-not-allowed' : ''}`}
              title="History"
              disabled={!activeProjectId}
           >
-            <Clock size={20} className="text-purple-200" />
+            <Clock size={20} className="text-white" />
           </button>
           <div className="flex-1"></div>
-          <button className="p-3 rounded-lg hover:bg-purple-700" title="Help/Info">
+          <button className="p-3 rounded-xl hover:bg-purple-700/50 transition-all duration-200" title="Help/Info">
             <AlertCircle size={20} className="text-purple-300" />
           </button>
         </div>

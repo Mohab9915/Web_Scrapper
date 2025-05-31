@@ -1,9 +1,11 @@
-import { useState, useEffect } from 'react';
-import { Send, Database, Plus, MessageSquare, Trash2 } from 'lucide-react';
+import { useState, useEffect, useRef } from 'react';
+import { Send, Database, Plus, MessageSquare, Trash2, Copy, Bot, User } from 'lucide-react';
+import TypingIndicator from './components/TypingIndicator';
+import { useToast } from './components/Toast';
 
-function ChatPanel({ 
-  isRagMode, 
-  selectedModelName, 
+function ChatPanel({
+  isRagMode,
+  selectedModelName,
   onSendMessage,
   conversations = [],
   currentConversationId,
@@ -13,14 +15,18 @@ function ChatPanel({
   onDeleteConversation
 }){
   const [inputMessage, setInputMessage] = useState('');
+  const [isTyping, setIsTyping] = useState(false);
+  const messagesEndRef = useRef(null);
+  const toast = useToast();
 
   const handleSendMessage = () => {
     // Only process messages if RAG is enabled
     if (inputMessage.trim() && isRagMode) {
+      setIsTyping(true);
       // Call the onSendMessage function with the input message
       onSendMessage(inputMessage, selectedModelName, () => {
         // This callback is called after the message is sent
-        // The parent component handles updating the chat messages
+        setIsTyping(false);
       });
 
       setInputMessage('');
@@ -28,19 +34,33 @@ function ChatPanel({
   };
 
   const handleKeyPress = (e) => {
-    if (e.key === 'Enter') {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
       handleSendMessage();
     }
   };
 
+  const copyMessage = (content) => {
+    navigator.clipboard.writeText(content).then(() => {
+      toast.success('Message copied to clipboard');
+    }).catch(() => {
+      toast.error('Failed to copy message');
+    });
+  };
+
+  // Auto-scroll to bottom when new messages arrive
+  useEffect(() => {
+    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' });
+  }, [chatMessages, isTyping]);
+
   return (
     <div className="flex h-full">
       {/* Conversation Sidebar */}
-      <div className="w-64 bg-purple-900 bg-opacity-50 border-r border-purple-700 flex flex-col">
-        <div className="p-4 border-b border-purple-700">
+      <div className="w-64 glass-dark border-r border-purple-600/50 flex flex-col">
+        <div className="p-4 border-b border-purple-600/50">
           <button
             onClick={onCreateConversation}
-            className="w-full flex items-center justify-center gap-2 bg-indigo-600 hover:bg-indigo-500 text-white px-4 py-2 rounded-lg transition-colors"
+            className="btn-primary w-full flex items-center justify-center gap-2"
           >
             <Plus size={16} />
             New Chat
@@ -49,16 +69,18 @@ function ChatPanel({
         
         <div className="flex-1 overflow-y-auto">
           {conversations.length === 0 ? (
-            <div className="p-4 text-center text-purple-300 text-sm">
+            <div className="p-4 text-center text-purple-300 text-sm animate-fadeIn">
+              <MessageSquare size={32} className="mx-auto mb-2 text-purple-400" />
               No conversations yet
             </div>
           ) : (
-            conversations.map(conversation => (
+            conversations.map((conversation, index) => (
               <div
                 key={conversation.id || conversation.conversationId}
-                className={`p-3 border-b border-purple-800 hover:bg-purple-800 cursor-pointer transition-colors ${
-                  currentConversationId === (conversation.id || conversation.conversationId) ? 'bg-purple-700' : ''
+                className={`p-3 border-b border-purple-600/30 cursor-pointer transition-all duration-200 hover:bg-purple-700/30 animate-slideIn ${
+                  currentConversationId === (conversation.id || conversation.conversationId) ? 'bg-purple-700/50 border-l-4 border-l-indigo-500' : ''
                 }`}
+                style={{ animationDelay: `${index * 0.1}s` }}
                 onClick={() => onSwitchConversation(conversation.id || conversation.conversationId)}
               >
                 <div className="flex items-center justify-between">
@@ -73,7 +95,7 @@ function ChatPanel({
                       e.stopPropagation();
                       onDeleteConversation(conversation.id || conversation.conversationId);
                     }}
-                    className="text-purple-400 hover:text-red-400 transition-colors p-1"
+                    className="text-purple-400 hover:text-red-400 transition-colors p-1 rounded hover:bg-red-500/20"
                   >
                     <Trash2 size={12} />
                   </button>
@@ -90,16 +112,16 @@ function ChatPanel({
       {/* Chat Area */}
       <div className="flex-1 flex flex-col">
         {isRagMode ? (
-          <div className="bg-indigo-900 bg-opacity-80 px-4 py-2 flex items-center border-b border-indigo-700">
-            <Database size={16} className="text-green-400 mr-2" />
-            <span className="text-green-300 text-sm">
+          <div className="status-success px-4 py-3 flex items-center border-b border-green-500/30 animate-fadeIn">
+            <Database size={16} className="text-green-400 mr-2 animate-pulse-slow" />
+            <span className="text-green-300 text-sm font-medium">
               RAG active: AI responses will incorporate recently scraped content.
             </span>
           </div>
         ) : (
-          <div className="bg-red-900 bg-opacity-80 px-4 py-2 flex items-center border-b border-red-700">
+          <div className="status-error px-4 py-3 flex items-center border-b border-red-500/30 animate-fadeIn">
             <Database size={16} className="text-red-400 mr-2" />
-            <span className="text-red-300 text-sm">
+            <span className="text-red-300 text-sm font-medium">
               Chat disabled: Enable RAG for this project to use the chat functionality.
             </span>
           </div>
@@ -107,60 +129,114 @@ function ChatPanel({
 
         <div className="flex-1 p-4 overflow-auto">
           {chatMessages.length === 0 ? (
-            <div className="text-center text-purple-300 mt-8">
-              {currentConversationId ? 
-                "Start a conversation by sending a message below" : 
-                "Create a new conversation to start chatting"
-              }
+            <div className="text-center text-purple-300 mt-8 animate-fadeIn">
+              <MessageSquare size={48} className="mx-auto mb-4 text-purple-400" />
+              <p className="text-lg font-medium mb-2">
+                {currentConversationId ?
+                  "Start a conversation" :
+                  "Create a new conversation"
+                }
+              </p>
+              <p className="text-sm">
+                {currentConversationId ?
+                  "Send a message below to begin chatting with the AI" :
+                  "Click 'New Chat' to start a conversation"
+                }
+              </p>
             </div>
           ) : (
-            chatMessages.map(message => (
-              <div
-                key={message.id}
-                className={`mb-4 max-w-3xl ${message.role === 'user' ? 'ml-auto' : ''}`}
-              >
+            <>
+              {chatMessages.filter(message => !message.isLoading).map((message, index) => (
                 <div
-                  className={`p-3 rounded-lg shadow-md ${
-                    message.role === 'user'
-                    ? 'bg-purple-600 text-white'
-                    : 'bg-indigo-800 bg-opacity-70 text-purple-100'
-                  }`}
+                  key={message.id}
+                  className={`mb-6 flex items-start gap-3 animate-fadeIn ${message.role === 'user' ? 'flex-row-reverse' : ''}`}
+                  style={{ animationDelay: `${index * 0.1}s` }}
                 >
-                  {message.content}
+                  {/* Avatar */}
+                  <div className={`w-8 h-8 rounded-full flex items-center justify-center shadow-lg ${
+                    message.role === 'user'
+                      ? 'bg-gradient-to-r from-purple-600 to-indigo-600'
+                      : 'bg-gradient-to-r from-indigo-600 to-purple-600'
+                  }`}>
+                    {message.role === 'user' ? (
+                      <User size={16} className="text-white" />
+                    ) : (
+                      <Bot size={16} className="text-white" />
+                    )}
+                  </div>
+
+                  {/* Message bubble */}
+                  <div className={`flex flex-col ${message.role === 'user' ? 'items-end' : 'items-start'} max-w-xs md:max-w-md lg:max-w-lg`}>
+                    <div
+                      className={`relative group ${
+                        message.role === 'user' ? 'message-user' : 'message-ai'
+                      }`}
+                    >
+                      {message.content}
+
+                      {/* Copy button */}
+                      <button
+                        onClick={() => copyMessage(message.content)}
+                        className="absolute top-2 right-2 opacity-0 group-hover:opacity-100 transition-opacity p-1 rounded hover:bg-white/10"
+                        title="Copy message"
+                      >
+                        <Copy size={14} />
+                      </button>
+                    </div>
+
+                    {/* Timestamp */}
+                    <div className={`text-xs text-purple-400 mt-1 ${message.role === 'user' ? 'text-right' : 'text-left'}`}>
+                      {new Date(message.timestamp).toLocaleTimeString()}
+                    </div>
+                  </div>
                 </div>
-                <div className={`text-xs text-purple-400 mt-1 ${message.role === 'user' ? 'text-right' : ''}`}>
-                  {new Date(message.timestamp).toLocaleTimeString()}
-                </div>
-              </div>
-            ))
+              ))}
+
+              {/* Typing indicator */}
+              <TypingIndicator isVisible={isTyping} />
+
+              {/* Auto-scroll anchor */}
+              <div ref={messagesEndRef} />
+            </>
           )}
         </div>
 
-        <div className="p-4 bg-purple-800 bg-opacity-70 border-t border-purple-700">
-          <div className="flex items-center space-x-2">
-            <input
-              type="text"
-              value={inputMessage}
-              onChange={(e) => setInputMessage(e.target.value)}
-              onKeyDown={handleKeyPress}
-              disabled={!isRagMode || !currentConversationId}
-              placeholder={
-                !isRagMode ? "Chat disabled. Enable RAG to use chat." :
-                !currentConversationId ? "Create a conversation to start chatting" :
-                "Ask about scraped content..."
-              }
-              className={`flex-1 p-3 rounded-lg text-white placeholder-purple-300 border border-purple-600 focus:outline-none focus:ring-2 focus:ring-purple-400 ${
-                isRagMode && currentConversationId ? "bg-purple-700" : "bg-purple-900 opacity-50 cursor-not-allowed"
-              }`}
-            />
+        <div className="glass-dark border-t border-purple-600/50 p-4">
+          <div className="flex items-end space-x-3">
+            <div className="flex-1">
+              <textarea
+                value={inputMessage}
+                onChange={(e) => setInputMessage(e.target.value)}
+                onKeyDown={handleKeyPress}
+                disabled={!isRagMode || !currentConversationId}
+                placeholder={
+                  !isRagMode ? "Chat disabled. Enable RAG to use chat." :
+                  !currentConversationId ? "Create a conversation to start chatting" :
+                  "Ask about scraped content... (Press Enter to send, Shift+Enter for new line)"
+                }
+                className={`input-primary resize-none min-h-[44px] max-h-32 ${
+                  isRagMode && currentConversationId ? "" : "opacity-50 cursor-not-allowed"
+                }`}
+                rows={1}
+                style={{
+                  height: 'auto',
+                  minHeight: '44px',
+                }}
+                onInput={(e) => {
+                  e.target.style.height = 'auto';
+                  e.target.style.height = Math.min(e.target.scrollHeight, 128) + 'px';
+                }}
+              />
+            </div>
             <button
               onClick={handleSendMessage}
-              disabled={!isRagMode || !currentConversationId}
-              className={`p-3 rounded-lg ${
-                isRagMode && currentConversationId
-                  ? "bg-indigo-600 hover:bg-indigo-500"
-                  : "bg-indigo-900 opacity-50 cursor-not-allowed"
+              disabled={!isRagMode || !currentConversationId || !inputMessage.trim()}
+              className={`btn-primary p-3 ${
+                isRagMode && currentConversationId && inputMessage.trim()
+                  ? "opacity-100"
+                  : "opacity-50 cursor-not-allowed"
               }`}
+              title="Send message"
             >
               <Send size={20} />
             </button>

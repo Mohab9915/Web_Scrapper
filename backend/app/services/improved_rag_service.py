@@ -91,30 +91,19 @@ class ImprovedRAGService:
                 sessions_response = supabase.table("scrape_sessions").select("unique_scrape_identifier").eq("project_id", str(project_id)).eq("status", "scraped").execute()
 
         # Check if the found sessions actually have embeddings
-        # If not, fall back to existing embeddings for this project
+        # Only use current sessions - do NOT fall back to old embeddings when re-scraping
         if sessions_response.data:
             # Check if any of the found sessions have embeddings
             session_unique_names = [s["unique_scrape_identifier"] for s in sessions_response.data]
             embeddings_check = supabase.table("embeddings").select("unique_name").in_("unique_name", session_unique_names).execute()
 
             if not embeddings_check.data:
-                # No embeddings for current sessions, look for any embeddings for this project
-                all_embeddings_response = supabase.table("embeddings").select("unique_name").execute()
-                project_embeddings = [e for e in all_embeddings_response.data if str(project_id) in e['unique_name']]
+                # No embeddings for current sessions - this is expected after re-scraping
+                # We will use the markdown content directly instead of falling back to old embeddings
+                pass
 
-                if project_embeddings:
-                    # Replace sessions with the ones that have embeddings
-                    sessions_response.data = [{"unique_scrape_identifier": e['unique_name']} for e in project_embeddings]
-
-        # If still no sessions found, check if there are any embeddings for this project at all
-        if not sessions_response.data:
-            # Check for any embeddings that belong to this project
-            all_embeddings_response = supabase.table("embeddings").select("unique_name").execute()
-            project_embeddings = [e for e in all_embeddings_response.data if str(project_id) in e['unique_name']]
-
-            if project_embeddings:
-                # Create a mock sessions response with the embedding unique names
-                sessions_response.data = [{"unique_scrape_identifier": e['unique_name']} for e in project_embeddings]
+        # If no current sessions found, return error - do NOT use old embeddings
+        # This ensures RAG forgets all previous sessions and only uses latest scraped data
 
         if not sessions_response.data:
             raise Exception("No RAG-processed data available for this project")
@@ -291,34 +280,23 @@ class ImprovedRAGService:
             logger.info(f"DEBUG: RAG enabled project, found {len(sessions_response.data)} scraped sessions")
 
         # Check if the found sessions actually have embeddings
-        # If not, fall back to existing embeddings for this project
+        # Only use current sessions - do NOT fall back to old embeddings when re-scraping
         if sessions_response.data:
             # Check if any of the found sessions have embeddings
             session_unique_names = [s["unique_scrape_identifier"] for s in sessions_response.data]
             embeddings_check = supabase.table("embeddings").select("unique_name").in_("unique_name", session_unique_names).execute()
 
             if not embeddings_check.data:
-                logger.info(f"DEBUG: Found sessions but no embeddings for them, looking for existing embeddings")
-                # No embeddings for current sessions, look for any embeddings for this project
-                all_embeddings_response = supabase.table("embeddings").select("unique_name").execute()
-                project_embeddings = [e for e in all_embeddings_response.data if str(project_id) in e['unique_name']]
+                logger.info(f"DEBUG: Found sessions but no embeddings for them. RAG will use markdown content directly.")
+                # No embeddings for current sessions - this is expected after re-scraping
+                # We will use the markdown content directly instead of falling back to old embeddings
+                unique_names = [session["unique_scrape_identifier"] for session in sessions_response.data]
+                return await self._query_with_markdown_content(project_id, query, azure_credentials, unique_names)
+            else:
+                logger.info(f"DEBUG: Found {len(embeddings_check.data)} embeddings for current sessions")
 
-                if project_embeddings:
-                    logger.info(f"DEBUG: Found {len(project_embeddings)} existing embeddings for project, using those for RAG")
-                    # Replace sessions with the ones that have embeddings
-                    sessions_response.data = [{"unique_scrape_identifier": e['unique_name']} for e in project_embeddings]
-
-        # If still no sessions found, check if there are any embeddings for this project at all
-        # This handles the case where old embeddings exist but current sessions don't have embeddings yet
-        if not sessions_response.data:
-            # Check for any embeddings that belong to this project
-            all_embeddings_response = supabase.table("embeddings").select("unique_name").execute()
-            project_embeddings = [e for e in all_embeddings_response.data if str(project_id) in e['unique_name']]
-
-            if project_embeddings:
-                logger.info(f"DEBUG: Found {len(project_embeddings)} existing embeddings for project, using those for RAG")
-                # Create a mock sessions response with the embedding unique names
-                sessions_response.data = [{"unique_scrape_identifier": e['unique_name']} for e in project_embeddings]
+        # If no current sessions found, return error - do NOT use old embeddings
+        # This ensures RAG forgets all previous sessions and only uses latest scraped data
 
         if not sessions_response.data:
             logger.warning(f"No RAG-processed data available for project {project_id} when querying.")
@@ -570,3 +548,122 @@ class ImprovedRAGService:
         )
 
         return assistant_message
+
+    async def _query_with_markdown_content(
+        self,
+        project_id: UUID,
+        query: str,
+        azure_credentials: Dict[str, str],
+        unique_names: List[str]
+    ) -> RAGQueryResponse:
+        """
+        Query using markdown content directly when no embeddings are available.
+        This is used after re-scraping when embeddings haven't been generated yet.
+        """
+        logger.info(f"DEBUG: Using markdown content directly for {len(unique_names)} sessions")
+
+        # Get markdown content for all current sessions
+        markdown_contents = []
+        source_documents = []
+
+        for unique_name in unique_names:
+            markdown_response = supabase.table("markdowns").select("markdown, url").eq("unique_name", unique_name).execute()
+            if markdown_response.data:
+                markdown_data = markdown_response.data[0]
+                markdown_content = markdown_data.get("markdown", "")
+                url = markdown_data.get("url", "")
+
+                if markdown_content:
+                    # Truncate very long content to avoid token limits
+                    max_chars = 8000  # Roughly 2000 tokens
+                    if len(markdown_content) > max_chars:
+                        markdown_content = markdown_content[:max_chars] + "... [content truncated]"
+
+                    markdown_contents.append(markdown_content)
+                    source_documents.append({
+                        "content": markdown_content[:500] + "..." if len(markdown_content) > 500 else markdown_content,
+                        "metadata": {
+                            "url": url,
+                            "similarity": 1.0  # Direct match since we're using all content
+                        }
+                    })
+
+        if not markdown_contents:
+            return RAGQueryResponse(
+                answer="No content available in the latest scraped data.",
+                generation_cost=0.0,
+                source_documents=[]
+            )
+
+        # Combine all markdown content as context
+        context = "\n\n".join(markdown_contents)
+
+        # Use Azure OpenAI to generate response
+        try:
+            import httpx
+            api_key = azure_credentials['api_key']
+            endpoint = azure_credentials['endpoint']
+            deployment_name = AZURE_CHAT_MODEL
+
+            # Handle practicehub endpoint format
+            if "practicehub3994533910" in endpoint:
+                url = f"https://practicehub3994533910.services.ai.azure.com/openai/deployments/{deployment_name}/chat/completions?api-version=2024-05-01-preview"
+            elif "services.ai.azure.com" in endpoint:
+                base_endpoint = endpoint.replace("/models", "")
+                url = f"{base_endpoint}/openai/deployments/{deployment_name}/chat/completions?api-version=2023-05-15"
+            else:
+                url = f"{endpoint}/openai/deployments/{deployment_name}/chat/completions?api-version=2023-05-15"
+
+            system_message = (
+                "You are an AI assistant answering questions based on the latest scraped content. "
+                "Provide helpful and accurate answers based only on the provided context. "
+                "If the context doesn't contain relevant information, say so clearly."
+            )
+
+            messages = [
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": f"CONTEXT:\n{context}\n\nQUESTION: {query}"}
+            ]
+
+            payload = {
+                "messages": messages,
+                "temperature": 0.7,
+                "top_p": 0.8,
+                "max_tokens": 1024,
+                "model": deployment_name
+            }
+
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    url,
+                    json=payload,
+                    headers={
+                        "Content-Type": "application/json",
+                        "api-key": api_key
+                    }
+                )
+
+                if response.status_code != 200:
+                    logger.error(f"Error from Azure OpenAI API: {response.text}")
+                    answer = "Sorry, I encountered an error while generating a response."
+                    generation_cost = 0.0
+                else:
+                    response_data = response.json()
+                    answer = response_data.get("choices", [{}])[0].get("message", {}).get("content", "")
+
+                    # Calculate cost
+                    input_chars = len(context) + len(query) + 100
+                    output_chars = len(answer)
+                    total_tokens = (input_chars + output_chars) / 4
+                    generation_cost = (total_tokens / 1000) * 0.002
+
+        except Exception as e:
+            logger.error(f"Error calling Azure OpenAI API: {e}")
+            answer = f"Sorry, I encountered an error while generating a response: {str(e)}"
+            generation_cost = 0.0
+
+        return RAGQueryResponse(
+            answer=answer,
+            generation_cost=generation_cost,
+            source_documents=source_documents
+        )
