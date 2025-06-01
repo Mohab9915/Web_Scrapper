@@ -118,8 +118,8 @@ function WebScrapingDashboard() {
           // Use null to ensure "No history" message shows correctly - will be populated by fetchScrapingSessions
           history: null,
           createdAt: project.created_at,
-          // Fix RAG status logic: if rag_enabled is true, set to 'enabled', otherwise 'disabled'
-          ragStatus: project.rag_enabled ? 'enabled' : 'disabled',
+          // Fix RAG status logic: use ragEnabled (camelCase) from transformed API response
+          ragStatus: project.ragEnabled ? 'enabled' : 'disabled',
         }));
 
         setProjects(formattedProjects);
@@ -265,7 +265,7 @@ function WebScrapingDashboard() {
         errorMessage: '',
         history: null, // Use null instead of empty array to show "No history" message
         createdAt: new Date().toISOString(),
-        ragStatus: data.rag_enabled ? 'enabled' : 'disabled',
+        ragStatus: data.ragEnabled ? 'enabled' : 'disabled',
       };
 
       setProjects(prevProjects => [...prevProjects, newProject]);
