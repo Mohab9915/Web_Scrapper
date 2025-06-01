@@ -100,6 +100,8 @@ jobs:
         context: .
         file: ./Dockerfile.frontend
         push: true
+        build-args: |
+          REACT_APP_API_URL=https://scrapemaster-backend-prod.whitemeadow-57a6711f.eastus.azurecontainerapps.io
         tags: |
           ${{ steps.infrastructure.outputs.login_server }}/${{ env.FRONTEND_IMAGE_NAME }}:latest
           ${{ steps.infrastructure.outputs.login_server }}/${{ env.FRONTEND_IMAGE_NAME }}:${{ github.sha }}
