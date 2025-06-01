@@ -1,0 +1,185 @@
+name: Deploy to Azure Container Apps
+
+on:
+  push:
+    branches: [ main ]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: 'Environment to deploy to'
+        required: true
+        default: 'prod'
+        type: choice
+        options:
+        - dev
+        - staging
+        - prod
+
+env:
+  AZURE_RESOURCE_GROUP: scrapemaster-rg
+  AZURE_LOCATION: eastus
+  CONTAINER_REGISTRY_NAME: scrapemasterregistry
+  BACKEND_IMAGE_NAME: scrapemaster/backend
+  FRONTEND_IMAGE_NAME: scrapemaster/frontend
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+    environment: ${{ github.event.inputs.environment || 'prod' }}
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v4
+
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    - name: Login to Azure
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Get Container Registry Login Server
+      id: registry
+      run: |
+        REGISTRY_LOGIN_SERVER=$(az acr show --name ${{ env.CONTAINER_REGISTRY_NAME }} --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query "loginServer" --output tsv)
+        echo "login_server=$REGISTRY_LOGIN_SERVER" >> $GITHUB_OUTPUT
+
+    - name: Login to Azure Container Registry
+      run: |
+        az acr login --name ${{ env.CONTAINER_REGISTRY_NAME }}
+
+    - name: Build and push backend image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile.backend
+        push: true
+        tags: |
+          ${{ steps.registry.outputs.login_server }}/${{ env.BACKEND_IMAGE_NAME }}:latest
+          ${{ steps.registry.outputs.login_server }}/${{ env.BACKEND_IMAGE_NAME }}:${{ github.sha }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Build and push frontend image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: ./Dockerfile.frontend
+        push: true
+        tags: |
+          ${{ steps.registry.outputs.login_server }}/${{ env.FRONTEND_IMAGE_NAME }}:latest
+          ${{ steps.registry.outputs.login_server }}/${{ env.FRONTEND_IMAGE_NAME }}:${{ github.sha }}
+        cache-from: type=gha
+        cache-to: type=gha,mode=max
+
+    - name: Deploy infrastructure to Azure
+      run: |
+        az deployment group create \
+          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+          --template-file azure-container-apps.bicep \
+          --parameters \
+            namePrefix=scrapemaster \
+            environment=${{ github.event.inputs.environment || 'prod' }} \
+            supabaseUrl="${{ secrets.SUPABASE_URL }}" \
+            supabaseKey="${{ secrets.SUPABASE_KEY }}" \
+            azureOpenAIApiKey="${{ secrets.AZURE_OPENAI_API_KEY }}" \
+            azureOpenAIEndpoint="${{ secrets.AZURE_OPENAI_ENDPOINT }}" \
+            containerRegistryName=${{ env.CONTAINER_REGISTRY_NAME }}
+
+    - name: Update container apps with new images
+      run: |
+        # Update backend container app
+        az containerapp update \
+          --name scrapemaster-backend-${{ github.event.inputs.environment || 'prod' }} \
+          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+          --image ${{ steps.registry.outputs.login_server }}/${{ env.BACKEND_IMAGE_NAME }}:${{ github.sha }}
+
+        # Update frontend container app
+        az containerapp update \
+          --name scrapemaster-frontend-${{ github.event.inputs.environment || 'prod' }} \
+          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+          --image ${{ steps.registry.outputs.login_server }}/${{ env.FRONTEND_IMAGE_NAME }}:${{ github.sha }}
+
+    - name: Get deployment URLs
+      id: urls
+      run: |
+        BACKEND_URL=$(az containerapp show \
+          --name scrapemaster-backend-${{ github.event.inputs.environment || 'prod' }} \
+          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+          --query "properties.configuration.ingress.fqdn" \
+          --output tsv)
+        
+        FRONTEND_URL=$(az containerapp show \
+          --name scrapemaster-frontend-${{ github.event.inputs.environment || 'prod' }} \
+          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+          --query "properties.configuration.ingress.fqdn" \
+          --output tsv)
+        
+        echo "backend_url=https://$BACKEND_URL" >> $GITHUB_OUTPUT
+        echo "frontend_url=https://$FRONTEND_URL" >> $GITHUB_OUTPUT
+
+    - name: Run health checks
+      run: |
+        echo "Waiting for services to be ready..."
+        sleep 60
+        
+        # Check backend health
+        curl -f ${{ steps.urls.outputs.backend_url }}/health || exit 1
+        echo "✅ Backend health check passed"
+        
+        # Check frontend
+        curl -f ${{ steps.urls.outputs.frontend_url }} || exit 1
+        echo "✅ Frontend health check passed"
+
+    - name: Create deployment summary
+      run: |
+        echo "## 🚀 Deployment Summary" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "**Environment:** ${{ github.event.inputs.environment || 'prod' }}" >> $GITHUB_STEP_SUMMARY
+        echo "**Commit:** ${{ github.sha }}" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 🌐 Application URLs" >> $GITHUB_STEP_SUMMARY
+        echo "- **Frontend:** ${{ steps.urls.outputs.frontend_url }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **Backend API:** ${{ steps.urls.outputs.backend_url }}" >> $GITHUB_STEP_SUMMARY
+        echo "- **API Documentation:** ${{ steps.urls.outputs.backend_url }}/docs" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "### 📊 Monitoring" >> $GITHUB_STEP_SUMMARY
+        echo "- **Azure Portal:** [View Resources](https://portal.azure.com/#@/resource/subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${{ env.AZURE_RESOURCE_GROUP }})" >> $GITHUB_STEP_SUMMARY
+        echo "- **Application Insights:** [View Metrics](https://portal.azure.com/#@/resource/subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${{ env.AZURE_RESOURCE_GROUP }}/providers/Microsoft.Insights/components/scrapemaster-insights-${{ github.event.inputs.environment || 'prod' }})" >> $GITHUB_STEP_SUMMARY
+
+  cleanup-old-images:
+    needs: build-and-deploy
+    runs-on: ubuntu-latest
+    if: success()
+    
+    steps:
+    - name: Login to Azure
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+    - name: Cleanup old container images
+      run: |
+        # Keep only the latest 5 images for each repository
+        az acr repository show-tags \
+          --name ${{ env.CONTAINER_REGISTRY_NAME }} \
+          --repository ${{ env.BACKEND_IMAGE_NAME }} \
+          --orderby time_desc \
+          --output tsv | tail -n +6 | while read tag; do
+          az acr repository delete \
+            --name ${{ env.CONTAINER_REGISTRY_NAME }} \
+            --image ${{ env.BACKEND_IMAGE_NAME }}:$tag \
+            --yes
+        done
+
+        az acr repository show-tags \
+          --name ${{ env.CONTAINER_REGISTRY_NAME }} \
+          --repository ${{ env.FRONTEND_IMAGE_NAME }} \
+          --orderby time_desc \
+          --output tsv | tail -n +6 | while read tag; do
+          az acr repository delete \
+            --name ${{ env.CONTAINER_REGISTRY_NAME }} \
+            --image ${{ env.FRONTEND_IMAGE_NAME }}:$tag \
+            --yes
+        done
