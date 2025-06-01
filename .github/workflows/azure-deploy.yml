@@ -38,45 +38,22 @@ jobs:
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-    - name: Deploy infrastructure (Phase 1)
+    - name: Get existing infrastructure
       id: infrastructure
       run: |
-        INFRA_DEPLOYMENT_NAME="scrapemaster-infra-$(date +%Y%m%d-%H%M%S)"
-        CONTAINER_REGISTRY_NAME="scrapemaster$(date +%s)"
+        # Use existing registry and environment to skip infrastructure deployment
+        REGISTRY_NAME=$(az acr list --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query "[0].name" --output tsv)
+        REGISTRY_LOGIN_SERVER=$(az acr list --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query "[0].loginServer" --output tsv)
+        CONTAINER_APP_ENV_ID=$(az containerapp env list --resource-group ${{ env.AZURE_RESOURCE_GROUP }} --query "[0].id" --output tsv)
 
-        echo "Deploying infrastructure (registry, environment, logs)..."
-        az deployment group create \
-          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-          --template-file azure-infrastructure.bicep \
-          --name "$INFRA_DEPLOYMENT_NAME" \
-          --parameters \
-            namePrefix=scrapemaster \
-            environment=${{ github.event.inputs.environment || 'prod' }} \
-            containerRegistryName="$CONTAINER_REGISTRY_NAME"
-
-        # Get outputs from infrastructure deployment
-        REGISTRY_LOGIN_SERVER=$(az deployment group show \
-          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-          --name "$INFRA_DEPLOYMENT_NAME" \
-          --query "properties.outputs.containerRegistryLoginServer.value" \
-          --output tsv)
-
-        REGISTRY_NAME=$(az deployment group show \
-          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-          --name "$INFRA_DEPLOYMENT_NAME" \
-          --query "properties.outputs.containerRegistryName.value" \
-          --output tsv)
-
-        CONTAINER_APP_ENV_ID=$(az deployment group show \
-          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-          --name "$INFRA_DEPLOYMENT_NAME" \
-          --query "properties.outputs.containerAppEnvironmentId.value" \
-          --output tsv)
+        echo "Using existing infrastructure:"
+        echo "Registry: $REGISTRY_NAME"
+        echo "Login Server: $REGISTRY_LOGIN_SERVER"
+        echo "Environment ID: $CONTAINER_APP_ENV_ID"
 
         echo "login_server=$REGISTRY_LOGIN_SERVER" >> $GITHUB_OUTPUT
         echo "registry_name=$REGISTRY_NAME" >> $GITHUB_OUTPUT
         echo "container_app_env_id=$CONTAINER_APP_ENV_ID" >> $GITHUB_OUTPUT
-        echo "infra_deployment_name=$INFRA_DEPLOYMENT_NAME" >> $GITHUB_OUTPUT
 
     - name: Login to Azure Container Registry
       run: |
@@ -157,15 +134,29 @@ jobs:
     - name: Run health checks
       run: |
         echo "Waiting for services to be ready..."
-        sleep 60
-        
-        # Check backend health
-        curl -f ${{ steps.urls.outputs.backend_url }}/health || exit 1
-        echo "✅ Backend health check passed"
-        
-        # Check frontend
-        curl -f ${{ steps.urls.outputs.frontend_url }} || exit 1
-        echo "✅ Frontend health check passed"
+        sleep 20
+
+        # Check backend health with retry
+        for i in {1..6}; do
+          if curl -f ${{ steps.urls.outputs.backend_url }}/health; then
+            echo "✅ Backend health check passed"
+            break
+          else
+            echo "Backend not ready, attempt $i/6..."
+            sleep 10
+          fi
+        done
+
+        # Check frontend with retry
+        for i in {1..3}; do
+          if curl -f ${{ steps.urls.outputs.frontend_url }}; then
+            echo "✅ Frontend health check passed"
+            break
+          else
+            echo "Frontend not ready, attempt $i/3..."
+            sleep 5
+          fi
+        done
 
     - name: Create deployment summary
       run: |
@@ -184,9 +175,8 @@ jobs:
         echo "- **Application Insights:** [View Metrics](https://portal.azure.com/#@/resource/subscriptions/${{ secrets.AZURE_SUBSCRIPTION_ID }}/resourceGroups/${{ env.AZURE_RESOURCE_GROUP }}/providers/Microsoft.Insights/components/scrapemaster-insights-${{ github.event.inputs.environment || 'prod' }})" >> $GITHUB_STEP_SUMMARY
 
   cleanup-old-images:
-    needs: build-and-deploy
     runs-on: ubuntu-latest
-    if: success()
+    if: always()  # Run cleanup regardless of main job status
     
     steps:
     - name: Login to Azure

@@ -165,8 +165,8 @@ class RAGService:
                         try:
                             chart_data = await self.generate_chart_data(query, context, azure_credentials)
                             if chart_data and "error" not in chart_data:
-                                # Update the answer to indicate chart generation
-                                answer = "I'll create a chart for you based on the available data."
+                                # For chart requests, return minimal text - the chart is the main response
+                                answer = ""  # Let the frontend show only the chart
                         except Exception as e:
                             print(f"Error generating chart data in fallback: {e}")
 
@@ -244,9 +244,9 @@ When users ask for specific data (products, lists, tables, etc.):
 
 CHART REQUESTS:
 If users ask for charts, graphs, or visualizations (keywords: "chart", "graph", "plot", "visualize", "show me a chart"):
-- Respond with: "I'll create a chart for you based on the available data."
-- The system will automatically generate the appropriate visualization
+- Keep your response brief or empty - the system will automatically generate the appropriate visualization
 - Don't try to create ASCII charts or describe charts in text
+- The chart will be displayed automatically to the user
 
 CONTEXT USAGE:
 - If context is provided, use it to answer data-related questions
@@ -320,8 +320,8 @@ CONTEXT USAGE:
             try:
                 chart_data = await self.generate_chart_data(query, context, azure_credentials)
                 if chart_data and "error" not in chart_data:
-                    # Update the answer to indicate chart generation
-                    answer = "I'll create a chart for you based on the available data."
+                    # For chart requests, return minimal text - the chart is the main response
+                    answer = ""  # Let the frontend show only the chart
             except Exception as e:
                 print(f"Error generating chart data: {e}")
 
@@ -1272,25 +1272,33 @@ OUTPUT FORMAT: Return ONLY a valid JSON object with this structure:
   "data": {
     "labels": ["Label1", "Label2", ...],
     "values": [value1, value2, ...],
-    "datasets": [{"label": "Dataset Name", "data": [1,2,3], "backgroundColor": ["#color1", "#color2"]}]
+    "datasets": [{"label": "Dataset Name", "data": [1,2,3], "backgroundColor": ["#4CAF50", "#2196F3", "#FFC107"]}]
   },
   "description": "Brief description of what the chart shows"
 }
 
-RULES:
-1. Extract actual data from the context
-2. Choose appropriate chart type based on data and query
-3. Use meaningful labels and titles
-4. For pie charts, ensure values are numeric and sum to a meaningful total
-5. For bar charts, use clear category labels
-6. For tables, structure data in rows and columns
-7. If no suitable data found, return {"error": "No suitable data for visualization"}
+DATA EXTRACTION RULES:
+1. Look for product data with names and prices (e.g., "Dell Latitude 5580": "$1144.4")
+2. Extract numeric values from price strings (remove $ and convert to numbers)
+3. Use product names as labels and prices as values
+4. Always create charts when you find ANY numeric data
+5. For price data, use "bar" chart type by default
+6. Use colorful backgrounds: ["#4CAF50", "#2196F3", "#FFC107", "#FF5722", "#9C27B0"]
 
 EXAMPLES:
-- "show product prices" → bar chart with products and prices
-- "pie chart of categories" → pie chart showing category distribution
-- "price statistics" → stats summary with min/max/average
-- "product table" → table with product details"""
+Input: [{'name': 'Dell Latitude 5580', 'price': '$1144.4'}, {'name': 'iPhone', 'price': '$899.99'}]
+Output: {
+  "chart_type": "bar",
+  "title": "Product Prices",
+  "data": {
+    "labels": ["Dell Latitude 5580", "iPhone"],
+    "values": [1144.4, 899.99],
+    "datasets": [{"label": "Price in USD", "data": [1144.4, 899.99], "backgroundColor": ["#4CAF50", "#2196F3"]}]
+  },
+  "description": "Bar chart showing product prices in USD"
+}
+
+IMPORTANT: If you find ANY products with prices, ALWAYS create a chart. Do NOT return error messages for valid product data."""
 
             messages_for_api = [
                 {"role": "system", "content": system_message},
