@@ -37,7 +37,7 @@ param supabaseKey string
 @secure()
 param azureOpenAIApiKey string
 
-@description('Azure OpenAI Endpoint')
+@description('Azure OpenAI Endpoint - Fixed to use correct cognitiveservices.azure.com domain')
 param azureOpenAIEndpoint string = 'https://practicehub3994533910.cognitiveservices.azure.com/'
 
 // Variables
