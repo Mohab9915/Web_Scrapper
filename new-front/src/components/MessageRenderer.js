@@ -2,7 +2,7 @@ import React, { memo, useMemo } from 'react';
 import { Copy, ExternalLink, ShoppingCart, DollarSign, Star, Package } from 'lucide-react';
 import StableChartRenderer from './StableChartRenderer';
 
-const MessageRenderer = memo(({ content, onCopy }) => {
+const MessageRenderer = memo(({ content, chartData, onCopy }) => {
   // Check if content contains structured data patterns
   const isStructuredResponse = content.includes('|') ||
                               content.includes('```') ||
@@ -65,8 +65,17 @@ const MessageRenderer = memo(({ content, onCopy }) => {
       );
     }
 
-    // Fallback: just render the chart
-    return <StableChartRenderer chartData={chartData} className="my-4" />;
+    // If we have chart data but no JSON in content, render text + chart
+    return (
+      <div>
+        {text && text.trim() && (
+          <div className="mb-4">
+            {renderEnhancedText(text)}
+          </div>
+        )}
+        <StableChartRenderer chartData={chartData} className="my-4" />
+      </div>
+    );
   };
 
   const renderCodeBlocks = (text) => {
@@ -315,14 +324,21 @@ const MessageRenderer = memo(({ content, onCopy }) => {
     </ul>
   );
 
-  // Memoize chart data extraction to prevent unnecessary re-computation
-  const chartData = useMemo(() => extractChartData(content), [content]);
+  // Memoize chart data - prioritize chartData prop over extracting from content
+  const finalChartData = useMemo(() => {
+    // If chartData is provided as a prop, use it directly
+    if (chartData && chartData.chart_type && chartData.data) {
+      return chartData;
+    }
+    // Otherwise, try to extract from content (legacy support)
+    return extractChartData(content);
+  }, [chartData, content]);
 
   // Parse and render different content types
   const renderContent = useMemo(() => {
     // Handle chart data first (highest priority)
-    if (chartData) {
-      return renderChartWithText(content, chartData);
+    if (finalChartData) {
+      return renderChartWithText(content, finalChartData);
     }
 
     // Handle code blocks (tables, JSON, etc.)
@@ -342,7 +358,7 @@ const MessageRenderer = memo(({ content, onCopy }) => {
 
     // Default text rendering with enhanced formatting
     return renderEnhancedText(content);
-  }, [content, chartData]);
+  }, [content, finalChartData]);
 
   return (
     <div className="relative">
