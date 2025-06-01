@@ -130,7 +130,8 @@ class ChatHistoryService:
                     content=row["message_content"],
                     timestamp=datetime.fromisoformat(row["created_at"].replace("Z", "+00:00")),
                     cost=row["metadata"].get("cost"),
-                    sources=row["metadata"].get("sources")
+                    sources=row["metadata"].get("sources"),
+                    chart_data=row["metadata"].get("chart_data")  # Include chart data from metadata
                 )
                 messages.append(message)
             

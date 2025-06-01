@@ -26,6 +26,7 @@ class ChatMessageResponse(ChatMessageBase):
     timestamp: datetime
     cost: Optional[float] = None
     sources: Optional[List[str]] = None
+    chart_data: Optional[Dict[str, Any]] = None  # Chart configuration and data
 
     class Config:
         from_attributes = True

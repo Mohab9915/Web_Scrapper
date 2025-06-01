@@ -438,7 +438,8 @@ CONTEXT USAGE:
                 "cost": rag_response.generation_cost,
                 "sources": [doc["metadata"]["url"] for doc in rag_response.source_documents] if rag_response.source_documents else [],
                 "model": deployment_name,
-                "timestamp": datetime.now().isoformat()
+                "timestamp": datetime.now().isoformat(),
+                "chart_data": rag_response.chart_data  # Include chart data in metadata
             }
         )
 
@@ -449,7 +450,8 @@ CONTEXT USAGE:
             content=rag_response.answer,
             timestamp=datetime.now(),
             cost=rag_response.generation_cost,
-            sources=[doc["metadata"]["url"] for doc in rag_response.source_documents] if rag_response.source_documents else None
+            sources=[doc["metadata"]["url"] for doc in rag_response.source_documents] if rag_response.source_documents else None,
+            chart_data=rag_response.chart_data  # Include chart data from RAG response
         )
 
         return assistant_message
