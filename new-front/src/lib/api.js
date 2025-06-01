@@ -31,8 +31,10 @@ function transformKeys(data) {
   return data;
 }
 
-// Backend API URL
-export const API_URL = 'http://localhost:8000/api/v1';
+// Backend API URL - use environment variable or fallback to localhost for development
+export const API_URL = process.env.REACT_APP_API_URL
+  ? `${process.env.REACT_APP_API_URL}/api/v1`
+  : 'http://localhost:8000/api/v1';
 
 // Get Azure OpenAI credentials from localStorage or use empty values
 const getAzureOpenAICredentials = () => {
