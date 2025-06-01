@@ -9,7 +9,7 @@ import ProjectsPanel from './ProjectsPanel';
 import RagPromptModal from './RagPromptModal';
 import ConfirmationModal from './ConfirmationModal';
 import RagManagement from './components/RagManagement';
-import { executeScrape, sendChatMessage, getProjectConversations, createConversation, deleteConversation, getConversationMessages, queryEnhancedRagApi, getProjects, createProject, deleteProject, getScrapedSessions, API_URL } from './lib/api';
+import { executeScrape, sendChatMessage, getProjectConversations, createConversation, deleteConversation, getConversationMessages, queryEnhancedRagApi, getProjects, createProject, deleteProject, getScrapedSessions, updateProjectRAGStatus, API_URL } from './lib/api';
 import { useToast } from './components/Toast';
 
 function WebScrapingDashboard() {
