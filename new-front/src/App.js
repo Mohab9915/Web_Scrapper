@@ -1,7 +1,9 @@
 import { useState } from 'react';
+import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
 import LoginPage from './LoginPage';
 import WebScrapingDashboard from './Dashboard';
 import ChartIntegrationTest from './test/ChartIntegrationTest';
+import ChartTest from './components/ChartTest';
 import { ToastProvider } from './components/Toast';
 
 function App() {
@@ -19,22 +21,28 @@ function App() {
   // Show test component if in test mode
   if (isTestMode) {
     return (
-      <ToastProvider>
-        <ChartIntegrationTest />
-      </ToastProvider>
+      <Router>
+        <ToastProvider>
+          <Routes>
+            <Route path="/test/chart" element={<ChartTest />} />
+            <Route path="*" element={<ChartIntegrationTest />} />
+          </Routes>
+        </ToastProvider>
+      </Router>
     );
   }
 
   return (
-    <ToastProvider>
-      <div className="App">
-        {!isLoggedIn ? (
-          <LoginPage onLogin={handleLogin} />
-        ) : (
-          <WebScrapingDashboard />
-        )}
-      </div>
-    </ToastProvider>
+    <Router>
+      <ToastProvider>
+        <div className="App">
+          <Routes>
+            <Route path="/login" element={!isLoggedIn ? <LoginPage onLogin={handleLogin} /> : <WebScrapingDashboard />} />
+            <Route path="/" element={!isLoggedIn ? <LoginPage onLogin={handleLogin} /> : <WebScrapingDashboard />} />
+          </Routes>
+        </div>
+      </ToastProvider>
+    </Router>
   );
 }
 

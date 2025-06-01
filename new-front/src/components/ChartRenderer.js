@@ -5,11 +5,22 @@ const ChartRenderer = ({ chartData, className = "" }) => {
   const canvasRef = useRef(null);
   const chartRef = useRef(null);
 
-  // Memoize chart data to prevent unnecessary re-renders
-  const memoizedChartData = useMemo(() => chartData, [JSON.stringify(chartData)]);
+  // Memoize chart data and normalize chart type for consistent usage
+  const memoizedChartData = useMemo(() => {
+    if (!chartData) return null;
+    // Normalize chart type to always use chartType
+    return {
+      ...chartData,
+      chartType: chartData.chartType || chartData.chart_type,
+    };
+  }, [JSON.stringify(chartData)]);
 
   useEffect(() => {
-    console.log('ChartRenderer: useEffect triggered', { memoizedChartData, hasCanvas: !!canvasRef.current });
+    console.log('ChartRenderer: useEffect triggered', { 
+      chartType: memoizedChartData?.chartType || memoizedChartData?.chart_type,
+      hasCanvas: !!canvasRef.current,
+      chartData: memoizedChartData 
+    });
 
     if (!memoizedChartData || !canvasRef.current) {
       console.log('ChartRenderer: Early return - no data or canvas');
@@ -24,16 +35,27 @@ const ChartRenderer = ({ chartData, className = "" }) => {
 
     const ctx = canvasRef.current.getContext('2d');
 
-    // Validate chart data structure (note: API transforms snake_case to camelCase)
-    if (!memoizedChartData.data || !memoizedChartData.chartType) {
-      console.error('ChartRenderer: Invalid chart data structure:', memoizedChartData);
+    // Validate chart data structure (handle both chartType and chart_type)
+    const chartType = memoizedChartData.chartType || memoizedChartData.chart_type;
+    if (!memoizedChartData.data || !chartType) {
+      console.error('ChartRenderer: Invalid chart data structure:', {
+        error: 'Missing required fields',
+        hasData: !!memoizedChartData.data,
+        chartType: chartType,
+        receivedData: memoizedChartData
+      });
       return;
     }
 
-    console.log('ChartRenderer: Creating chart', { type: memoizedChartData.chartType, title: memoizedChartData.title });
+    console.log('ChartRenderer: Creating chart', { 
+      type: chartType, 
+      title: memoizedChartData.title,
+      dataKeys: Object.keys(memoizedChartData.data)
+    });
 
     try {
-      if (memoizedChartData.chartType === 'bar') {
+      const chartType = memoizedChartData.chartType || memoizedChartData.chart_type;
+      if (chartType === 'bar') {
         // Prepare data for bar chart
         const labels = memoizedChartData.data.labels || [];
         const values = memoizedChartData.data.values || memoizedChartData.data.datasets?.[0]?.data || [];
@@ -80,7 +102,7 @@ const ChartRenderer = ({ chartData, className = "" }) => {
             }
           }
         });
-      } else if (memoizedChartData.chartType === 'pie') {
+      } else if (chartType === 'pie') {
         // Prepare data for pie chart
         const labels = memoizedChartData.data.labels || [];
         const values = memoizedChartData.data.values || memoizedChartData.data.datasets?.[0]?.data || [];
@@ -116,7 +138,7 @@ const ChartRenderer = ({ chartData, className = "" }) => {
             }
           }
         });
-      } else if (memoizedChartData.chartType === 'line') {
+      } else if (chartType === 'line') {
         // Prepare data for line chart
         const labels = memoizedChartData.data.labels || [];
         const values = memoizedChartData.data.values || memoizedChartData.data.datasets?.[0]?.data || [];
@@ -179,8 +201,10 @@ const ChartRenderer = ({ chartData, className = "" }) => {
   }, [memoizedChartData]);
 
   if (!memoizedChartData) return null;
+  
+  const chartType = memoizedChartData.chartType || memoizedChartData.chart_type;
 
-  if (memoizedChartData.chartType === 'table') {
+  if (chartType === 'table') {
     return (
       <div className={`bg-gray-800 rounded-lg p-4 ${className}`}>
         <h3 className="text-lg font-semibold text-purple-200 mb-3">{memoizedChartData.title}</h3>
@@ -217,7 +241,7 @@ const ChartRenderer = ({ chartData, className = "" }) => {
     );
   }
 
-  if (memoizedChartData.chartType === 'stats') {
+  if (chartType === 'stats') {
     // Handle different stats data formats
     let statsData = memoizedChartData.data.stats || [];
 

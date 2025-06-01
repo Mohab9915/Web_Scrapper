@@ -6,6 +6,8 @@ const MessageRenderer = memo(({ content, chartData, onCopy }) => {
 
   // Define helper functions using useCallback to avoid dependency issues
   const extractChartData = useCallback((text) => {
+    if (!text) return null;
+    
     try {
       // Look for JSON code blocks that contain chart data
       const jsonMatch = text.match(/```json\s*(\{[\s\S]*?\})\s*```/);
@@ -13,9 +15,16 @@ const MessageRenderer = memo(({ content, chartData, onCopy }) => {
         const jsonStr = jsonMatch[1];
         const data = JSON.parse(jsonStr);
 
-        // Check if it's chart data
-        if (data.chart_type && data.title && data.data) {
-          return data;
+        // Check if it's chart data (support both chart_type and chartType)
+        const hasChartType = data.chart_type || data.chartType;
+        const hasRequiredFields = data.title && data.data;
+        
+        if (hasChartType && hasRequiredFields) {
+          // Normalize to use chartType
+          return {
+            ...data,
+            chartType: data.chartType || data.chart_type,
+          };
         }
       }
       return null;
@@ -322,20 +331,33 @@ const MessageRenderer = memo(({ content, chartData, onCopy }) => {
   const finalChartData = useMemo(() => {
     console.log('MessageRenderer: Processing chart data', {
       hasChartDataProp: !!chartData,
-      chartDataType: chartData?.chartType,  // Note: camelCase after API transformation
+      chartDataType: chartData?.chartType || chartData?.chart_type, // Check both cases
       hasChartDataData: !!chartData?.data
     });
 
     // If chartData is provided as a prop, use it directly
-    // Note: API transforms snake_case to camelCase, so chart_type becomes chartType
-    if (chartData && chartData.chartType && chartData.data) {
-      console.log('MessageRenderer: Using chartData prop', chartData);
-      return chartData;
+    // Handle both chartType (camelCase) and chart_type (snake_case)
+    if (chartData && (chartData.chartType || chartData.chart_type) && chartData.data) {
+      // Normalize to camelCase for the frontend
+      const normalizedChartData = {
+        ...chartData,
+        chartType: chartData.chartType || chartData.chart_type,
+      };
+      console.log('MessageRenderer: Using chartData prop', normalizedChartData);
+      return normalizedChartData;
     }
+    
     // Otherwise, try to extract from content (legacy support)
     const extracted = extractChartData(content);
-    console.log('MessageRenderer: Extracted from content', extracted);
-    return extracted;
+    if (extracted) {
+      // Ensure extracted data is also normalized
+      return {
+        ...extracted,
+        chartType: extracted.chartType || extracted.chart_type,
+      };
+    }
+    console.log('MessageRenderer: No chart data extracted from content');
+    return null;
   }, [chartData, content, extractChartData]);
 
   // Parse and render different content types
