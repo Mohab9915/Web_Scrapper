@@ -147,21 +147,21 @@ async function fetchWithErrorHandling(url, options) {
  * Get all projects
  */
 export async function getProjects() {
-  return fetchWithErrorHandling(`${API_URL}/projects`);
+  return fetchWithErrorHandling(`${API_URL}/projects/`);
 }
 
 /**
  * Get a project by ID
  */
 export async function getProjectById(id) {
-  return fetchWithErrorHandling(`${API_URL}/projects/${id}`);
+  return fetchWithErrorHandling(`${API_URL}/projects/${id}/`);
 }
 
 /**
  * Create a new project
  */
 export async function createProject(name, initialUrls) {
-  return fetchWithErrorHandling(`${API_URL}/projects`, {
+  return fetchWithErrorHandling(`${API_URL}/projects/`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, initial_urls: initialUrls }),
@@ -172,7 +172,7 @@ export async function createProject(name, initialUrls) {
  * Update a project's name
  */
 export async function updateProjectName(id, name) {
-  return fetchWithErrorHandling(`${API_URL}/projects/${id}`, {
+  return fetchWithErrorHandling(`${API_URL}/projects/${id}/`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name }),
@@ -183,7 +183,7 @@ export async function updateProjectName(id, name) {
  * Update a project's RAG status
  */
 export async function updateProjectRAGStatus(id, enabled) {
-  return fetchWithErrorHandling(`${API_URL}/projects/${id}`, {
+  return fetchWithErrorHandling(`${API_URL}/projects/${id}/`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ rag_enabled: enabled }),
@@ -194,7 +194,7 @@ export async function updateProjectRAGStatus(id, enabled) {
  * Delete a project
  */
 export async function deleteProject(id) {
-  return fetchWithErrorHandling(`${API_URL}/projects/${id}`, {
+  return fetchWithErrorHandling(`${API_URL}/projects/${id}/`, {
     method: 'DELETE',
   });
 }
@@ -203,7 +203,7 @@ export async function deleteProject(id) {
  * Get all scraped sessions for a project
  */
 export async function getScrapedSessions(projectId) {
-  return fetchWithErrorHandling(`${API_URL}/projects/${projectId}/sessions`);
+  return fetchWithErrorHandling(`${API_URL}/projects/${projectId}/sessions/`);
 }
 
 /**
@@ -213,7 +213,7 @@ export async function initiateInteractiveScrape(projectId, url) {
   try {
     // First, try to use the backend API
     return await fetchWithErrorHandling(
-      `${API_URL}/projects/${projectId}/initiate-interactive-scrape`,
+      `${API_URL}/projects/${projectId}/initiate-interactive-scrape/`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -261,7 +261,7 @@ export async function executeScrape(projectId, url, sessionId, forceRefresh = fa
 
   // Include Azure OpenAI credentials for embedding generation
   const rawResult = await fetchWithErrorHandling(
-    `${API_URL}/projects/${projectId}/execute-scrape`,
+    `${API_URL}/projects/${projectId}/execute-scrape/`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -295,7 +295,7 @@ export async function executeScrape(projectId, url, sessionId, forceRefresh = fa
  */
 export async function deleteScrapedSession(projectId, sessionId) {
   return fetchWithErrorHandling(
-    `${API_URL}/projects/${projectId}/sessions/${sessionId}`,
+    `${API_URL}/projects/${projectId}/sessions/${sessionId}/`,
     {
       method: 'DELETE',
     }
@@ -306,7 +306,7 @@ export async function deleteScrapedSession(projectId, sessionId) {
  * Get cache statistics
  */
 export async function fetchCacheStats() {
-  return fetchWithErrorHandling(`${API_URL}/cache/stats`);
+  return fetchWithErrorHandling(`${API_URL}/cache/stats/`);
 }
 
 /**
@@ -326,7 +326,7 @@ export async function queryRagApi(projectId, userMessage, modelName) {
   };
 
   return fetchWithErrorHandling(
-    `${API_URL}/projects/${projectId}/query-rag`,
+    `${API_URL}/projects/${projectId}/query-rag/`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -345,7 +345,7 @@ export async function queryEnhancedRagApi(projectId, userMessage, modelName) {
   };
 
   return fetchWithErrorHandling(
-    `${API_URL}/projects/${projectId}/enhanced-query-rag`,
+    `${API_URL}/projects/${projectId}/enhanced-query-rag/`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -358,7 +358,7 @@ export async function queryEnhancedRagApi(projectId, userMessage, modelName) {
  * Get chat messages for a project/conversation
  */
 export async function getChatMessages(projectId, conversationId = null) {
-  let url = `/api/v1/projects/${projectId}/chat`;
+  let url = `${API_URL}/projects/${projectId}/chat/`;
   if (conversationId) {
     url += `?conversation_id=${conversationId}`;
   }
@@ -371,7 +371,7 @@ export async function getChatMessages(projectId, conversationId = null) {
  * Send a chat message and get a response
  */
 export async function sendChatMessage(projectId, content, conversationId = null, sessionId = null) {
-  let url = `${API_URL}/projects/${projectId}/chat`;
+  let url = `${API_URL}/projects/${projectId}/chat/`;
   const params = new URLSearchParams();
 
   if (conversationId) {
@@ -390,7 +390,7 @@ export async function sendChatMessage(projectId, content, conversationId = null,
   const messageBody = {
     content: content
   };
-  
+
   return fetchWithErrorHandling(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -403,7 +403,7 @@ export async function sendChatMessage(projectId, content, conversationId = null,
  */
 export async function getProjectConversations(projectId, limit = 50) {
   return fetchWithErrorHandling(
-    `${API_URL}/projects/${projectId}/conversations?limit=${limit}`
+    `${API_URL}/projects/${projectId}/conversations/?limit=${limit}`
   );
 }
 
@@ -411,11 +411,11 @@ export async function getProjectConversations(projectId, limit = 50) {
  * Create a new conversation
  */
 export async function createConversation(projectId, sessionId = null) {
-  let url = `${API_URL}/projects/${projectId}/conversations`;
+  let url = `${API_URL}/projects/${projectId}/conversations/`;
   if (sessionId) {
     url += `?session_id=${sessionId}`;
   }
-  
+
   return fetchWithErrorHandling(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -428,7 +428,7 @@ export async function createConversation(projectId, sessionId = null) {
  */
 export async function deleteConversation(projectId, conversationId) {
   return fetchWithErrorHandling(
-    `${API_URL}/projects/${projectId}/conversations/${conversationId}`,
+    `${API_URL}/projects/${projectId}/conversations/${conversationId}/`,
     {
       method: 'DELETE',
     }
@@ -440,6 +440,6 @@ export async function deleteConversation(projectId, conversationId) {
  */
 export async function getConversationMessages(projectId, conversationId, limit = 100) {
   return fetchWithErrorHandling(
-    `${API_URL}/projects/${projectId}/conversations/${conversationId}/messages?limit=${limit}`
+    `${API_URL}/projects/${projectId}/conversations/${conversationId}/messages/?limit=${limit}`
   );
 }
