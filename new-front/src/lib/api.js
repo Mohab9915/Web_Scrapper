@@ -58,14 +58,8 @@ const getAzureOpenAICredentials = () => {
   };
 };
 
-// Get OpenAI API key from localStorage or use empty value
-const getOpenAIApiKey = () => {
-  return localStorage.getItem('openaiApiKey') || '';
-};
-
 // Azure OpenAI model configuration
 const AZURE_EMBEDDING_MODEL = "text-embedding-ada-002";
-const AZURE_CHAT_MODEL = "gpt-4o-mini";
 
 /**
  * Error handling wrapper for fetch requests
@@ -346,12 +340,6 @@ export async function fetchCacheStats() {
  * Query the RAG API with the appropriate credentials
  */
 export async function queryRagApi(projectId, userMessage, modelName) {
-  // Determine which API to use based on the model name
-  // Only match exact gpt-4o, not gpt-4o-mini or other variants
-  const isGpt4o = modelName === 'gpt-4o' ||
-                  modelName === 'GPT-4o' ||
-                  modelName.toLowerCase() === 'gpt-4o';
-
   // Use Azure OpenAI for all queries - credentials come from environment
   const requestBody = {
     query: userMessage,
