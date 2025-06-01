@@ -15,7 +15,7 @@ class Settings(BaseSettings):
     API_V1_STR: str = "/api/v1"
 
     # CORS settings
-    CORS_ORIGINS: List[str] = ["*"]  # Allow all origins for now to fix CORS issue
+    CORS_ORIGINS: str = "*"  # Allow all origins for now to fix CORS issue
 
     # Supabase settings
     SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")

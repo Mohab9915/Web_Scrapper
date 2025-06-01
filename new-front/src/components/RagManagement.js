@@ -197,7 +197,7 @@ const RagManagement = ({ projectId, onStatusUpdate }) => {
         </ul>
       </div>
 
-      <style jsx>{`
+      <style>{`
         .rag-management {
           background: white;
           border-radius: 8px;

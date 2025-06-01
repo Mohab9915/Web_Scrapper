@@ -31,10 +31,10 @@ function transformKeys(data) {
   return data;
 }
 
-// Backend API URL - use environment variable or fallback to production (HTTPS)
+// Backend API URL - use environment variable or fallback to local development
 export const API_URL = process.env.REACT_APP_API_URL
   ? `${process.env.REACT_APP_API_URL}/api/v1`
-  : 'https://scrapemaster-backend-prod.whitemeadow-57a6711f.eastus.azurecontainerapps.io/api/v1';
+  : 'http://localhost:8000/api/v1';
 
 // Debug logging for API URL configuration
 console.log('🔧 API Configuration Debug:');
@@ -471,4 +471,11 @@ export async function getConversationMessages(projectId, conversationId, limit =
   return fetchWithErrorHandling(
     `${API_URL}/projects/${projectId}/conversations/${conversationId}/messages?limit=${limit}`
   );
+}
+
+/**
+ * Get project URLs
+ */
+export async function getProjectUrls(projectId) {
+  return fetchWithErrorHandling(`${API_URL}/projects/${projectId}/urls`);
 }

@@ -326,7 +326,7 @@ function WebScrapingDashboard() {
       }
 
       // Fetch project URLs to get conditions and display format (in parallel)
-      const projectUrlsPromise = fetch(`${API_URL}/projects/${projectId}/urls/`, {
+      const projectUrlsPromise = fetch(`${API_URL}/projects/${projectId}/urls`, {
           headers: {
             'Content-Type': 'application/json',
           }
@@ -347,7 +347,10 @@ function WebScrapingDashboard() {
 
       // Process each projectUrlItem (which might have latest_scrape_data)
       sessions.forEach((projectUrlItem) => {
-        const latestScrapeData = projectUrlItem.latest_scrape_data;
+        // The API transforms snake_case to camelCase, so latest_scrape_data becomes latestScrapeData
+        const latestScrapeData = projectUrlItem.latestScrapeData || projectUrlItem.latest_scrape_data;
+
+
 
         // Conditions and display_format come from the projectUrlItem itself
         const conditions = projectUrlItem.conditions || "title, description, price, content";
@@ -391,7 +394,10 @@ function WebScrapingDashboard() {
         }
 
         // Data from the ScrapedSessionResponse (latestScrapeData)
-        const tabularData = latestScrapeData.tabular_data || (Object.keys(structuredData).length > 0 ? [structuredData] : []);
+        // The API transforms snake_case to camelCase, so tabular_data becomes tabularData
+        const tabularData = latestScrapeData.tabularData || latestScrapeData.tabular_data || (Object.keys(structuredData).length > 0 ? [structuredData] : []);
+
+
         const fields = latestScrapeData.fields && latestScrapeData.fields.length > 0 
                        ? latestScrapeData.fields 
                        : conditions.split(',').map(field => field.trim());
@@ -438,6 +444,9 @@ function WebScrapingDashboard() {
           project_id: projectId,
           session_id: latestScrapeData.id // ID of the scrape session
         };
+
+
+
         scrapingResults.push(resultEntry);
 
         // IMPORTANT: We removed the code that creates history entries to avoid recreating deleted history items
@@ -541,6 +550,9 @@ function WebScrapingDashboard() {
       // Update project RAG status to enabled
       await updateProjectRAGStatus(projectId, true);
 
+      // Update local state immediately to reflect the change
+      updateProjectById(projectId, { ragStatus: 'enabled' });
+
       // Call the enable-rag endpoint to process the data
       const ragResponse = await fetch(`${API_URL}/projects/${projectId}/enable-rag`, {
         method: 'POST'
@@ -550,23 +562,29 @@ function WebScrapingDashboard() {
         throw new Error('Failed to process RAG data');
       }
 
-      // Update the project's RAG status in the UI
-      updateProjectById(projectId, { ragStatus: 'enabled' });
+      // Clear the cache for this project to force fresh data fetch
+      setSessionsCache(prevCache => {
+        const newCache = { ...prevCache };
+        delete newCache[projectId];
+        return newCache;
+      });
 
       // Fetch sessions to update UI and show RAG status
+      // This will also update the ragStatus based on the fresh data from the server
       fetchScrapingSessions(projectId);
 
       alert('RAG has been successfully enabled for this project! You can now use the chat feature to query your scraped data.');
 
     } catch (error) {
       console.error('Error enabling RAG:', error);
+      // Revert the local state since the operation failed
+      updateProjectById(projectId, { ragStatus: 'disabled' });
       alert(`Failed to enable RAG: ${error.message}`);
     }
   };
 
   const handleRagDecision = async (projectId, decision) => {
-    // Update the local state
-    updateProjectById(projectId, { ragStatus: decision });
+    // Don't update local state immediately - let fetchScrapingSessions handle it
     setIsRagPromptModalOpen(false);
     setProjectToPromptRagId(null);
 
@@ -576,6 +594,9 @@ function WebScrapingDashboard() {
 
       // Update RAG status at the project level
       await updateProjectRAGStatus(projectId, ragEnabled);
+
+      // Update local state immediately to reflect the change
+      updateProjectById(projectId, { ragStatus: ragEnabled ? 'enabled' : 'disabled' });
 
       if (ragEnabled) {
         console.log(`RAG enabled for project ${projectId}. All existing and future data will be considered for RAG.`);
@@ -588,6 +609,13 @@ function WebScrapingDashboard() {
         if (!ragResponse.ok) {
           throw new Error('Failed to process RAG data');
         }
+
+        // Clear the cache for this project to force fresh data fetch
+        setSessionsCache(prevCache => {
+          const newCache = { ...prevCache };
+          delete newCache[projectId];
+          return newCache;
+        });
 
         // Fetch sessions to update UI
         fetchScrapingSessions(projectId);

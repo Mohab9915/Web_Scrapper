@@ -289,7 +289,7 @@ export default function ProjectDetailPage() {
                     Created: {format(new Date(project.createdAt), 'PPP p')}
                 </p>
             </div>
-            {project.ragStatus === 'Enabled' && (
+            {(project.ragStatus === 'Enabled' || (project as any).ragEnabled === true) && (
                  <Button asChild>
                     <Link href={`/projects/${project.id}/rag`}>
                         <BotMessageSquare className="mr-2 h-4 w-4" /> Open RAG Chat
@@ -308,7 +308,7 @@ export default function ProjectDetailPage() {
           <div className="flex items-center space-x-2">
             <Switch
               id="rag-toggle"
-              checked={project.ragStatus === 'Enabled'}
+              checked={project.ragStatus === 'Enabled' || (project as any).ragEnabled === true}
               onCheckedChange={handleRagToggle}
               disabled={isRagUpdating || project.ragStatus === 'Enabling'}
             />
