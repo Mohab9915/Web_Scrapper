@@ -3,7 +3,7 @@
 import json
 from typing import List
 from pydantic import BaseModel, create_model
-from .assets import (OPENAI_MODEL_FULLNAME,GEMINI_MODEL_FULLNAME,SYSTEM_MESSAGE,generate_user_focused_system_message)
+from .assets import (AZURE_CHAT_MODEL,SYSTEM_MESSAGE,generate_user_focused_system_message)
 from .llm_calls import (call_llm_model)
 from .markdown import read_raw_data
 # from .api_management import get_supabase_client # No longer needed for supabase client here

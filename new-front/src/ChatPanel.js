@@ -6,7 +6,6 @@ import { useToast } from './components/Toast';
 
 function ChatPanel({
   isRagMode,
-  selectedModelName,
   onSendMessage,
   conversations = [],
   currentConversationId,
@@ -25,7 +24,7 @@ function ChatPanel({
     if (inputMessage.trim() && isRagMode) {
       setIsTyping(true);
       // Call the onSendMessage function with the input message
-      onSendMessage(inputMessage, selectedModelName, () => {
+      onSendMessage(inputMessage, () => {
         // This callback is called after the message is sent
         setIsTyping(false);
       });
@@ -77,24 +76,24 @@ function ChatPanel({
           ) : (
             conversations.map((conversation, index) => (
               <div
-                key={conversation.id || conversation.conversationId}
+                key={conversation.conversation_id || conversation.id || conversation.conversationId}
                 className={`p-3 border-b border-purple-600/30 cursor-pointer transition-all duration-200 hover:bg-purple-700/30 animate-slideIn ${
-                  currentConversationId === (conversation.id || conversation.conversationId) ? 'bg-purple-700/50 border-l-4 border-l-indigo-500' : ''
+                  currentConversationId === (conversation.conversation_id || conversation.id || conversation.conversationId) ? 'bg-purple-700/50 border-l-4 border-l-indigo-500' : ''
                 }`}
                 style={{ animationDelay: `${index * 0.1}s` }}
-                onClick={() => onSwitchConversation(conversation.id || conversation.conversationId)}
+                onClick={() => onSwitchConversation(conversation.conversation_id || conversation.id || conversation.conversationId)}
               >
                 <div className="flex items-center justify-between">
                   <div className="flex items-center gap-2 flex-1 min-w-0">
                     <MessageSquare size={14} className="text-purple-400 flex-shrink-0" />
                     <div className="text-sm text-white truncate">
-                      {conversation.summary || `Chat ${(conversation.id || conversation.conversationId || 'unknown').toString().slice(0, 8)}`}
+                      {conversation.title || conversation.summary || conversation.preview || `Chat ${(conversation.conversation_id || conversation.id || conversation.conversationId || 'unknown').toString().slice(0, 8)}`}
                     </div>
                   </div>
                   <button
                     onClick={(e) => {
                       e.stopPropagation();
-                      onDeleteConversation(conversation.id || conversation.conversationId);
+                      onDeleteConversation(conversation.conversation_id || conversation.id || conversation.conversationId);
                     }}
                     className="text-purple-400 hover:text-red-400 transition-colors p-1 rounded hover:bg-red-500/20"
                   >

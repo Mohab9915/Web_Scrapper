@@ -5,11 +5,13 @@ import json
 import re
 import httpx
 import numpy as np
+import os
 from typing import Dict, List, Optional, Any, Tuple, Union
 from uuid import UUID, uuid4
 from datetime import datetime
 import logging
 
+from fastapi import HTTPException
 from ..database import supabase
 from ..models.chat import RAGQueryResponse, ChatMessageResponse
 # Remove the import since these constants don't exist in config
@@ -292,7 +294,6 @@ class EnhancedRAGService:
         self,
         project_id: UUID,
         query: str,
-        azure_credentials: Dict[str, str],
         deployment_name: str = None
     ) -> RAGQueryResponse:
         """
@@ -301,12 +302,20 @@ class EnhancedRAGService:
         Args:
             project_id: Project ID
             query: User query
-            azure_credentials: Azure OpenAI credentials
             deployment_name: Model deployment name
 
         Returns:
             RAGQueryResponse: Enhanced formatted response
         """
+        # Get Azure OpenAI credentials from environment variables
+        azure_credentials = {
+            "api_key": os.getenv("AZURE_OPENAI_API_KEY"),
+            "endpoint": os.getenv("AZURE_OPENAI_ENDPOINT"),
+            "api_version": os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
+        }
+
+        if not azure_credentials["api_key"] or not azure_credentials["endpoint"]:
+            raise HTTPException(status_code=500, detail="Azure OpenAI credentials not configured in environment variables")
         try:
             # Get relevant context
             context_chunks = await self._get_enhanced_context(project_id, query)

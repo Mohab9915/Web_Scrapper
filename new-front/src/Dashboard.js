@@ -142,16 +142,25 @@ function WebScrapingDashboard() {
   const loadChatMessages = useCallback(async (conversationIdOverride = null) => {
     const conversationIdToUse = conversationIdOverride || currentConversationId;
 
+    console.log('loadChatMessages called with:', {
+      conversationIdOverride,
+      currentConversationId,
+      conversationIdToUse,
+      activeProjectId
+    });
+
     if (!activeProjectId || !conversationIdToUse) {
+      console.log('Clearing messages - missing activeProjectId or conversationId');
       setChatMessages([]);
       return;
     }
 
     try {
-      console.log('Loading messages for conversation:', conversationIdToUse);
+      console.log('Loading messages for conversation:', conversationIdToUse, 'in project:', activeProjectId);
       // Use getConversationMessages which is specifically designed for fetching conversation messages
       const messages = await getConversationMessages(activeProjectId, conversationIdToUse);
       console.log('Retrieved messages:', messages);
+      console.log('Number of messages:', messages ? messages.length : 0);
       setChatMessages(messages || []);
     } catch (error) {
       console.error('Error loading chat messages:', error);
@@ -165,7 +174,11 @@ function WebScrapingDashboard() {
       if (activeProjectId) {
         // Load conversations
         try {
+          console.log('Loading conversations for project:', activeProjectId);
           const projectConversations = await getProjectConversations(activeProjectId);
+          console.log('Retrieved conversations:', projectConversations);
+          console.log('Number of conversations:', projectConversations ? projectConversations.length : 0);
+
           setConversations(prev => ({
             ...prev,
             [activeProjectId]: projectConversations || []
@@ -173,7 +186,14 @@ function WebScrapingDashboard() {
 
           // If there's no current conversation but there are conversations, select the first one
           if (projectConversations && projectConversations.length > 0 && !currentConversationId) { // currentConversationId is used
-            setCurrentConversationId(projectConversations[0].id);
+            const firstConversationId = projectConversations[0].conversation_id;
+            console.log('Auto-selecting first conversation:', firstConversationId);
+            setCurrentConversationId(firstConversationId);
+          } else {
+            console.log('Not auto-selecting conversation:', {
+              hasConversations: projectConversations && projectConversations.length > 0,
+              currentConversationId
+            });
           }
         } catch (error) {
           console.error('Error loading conversations:', error);
@@ -186,7 +206,7 @@ function WebScrapingDashboard() {
     };
 
     loadData();
-  }, [activeProjectId, currentConversationId]); // Added currentConversationId
+  }, [activeProjectId]); // Remove currentConversationId to avoid infinite loops
 
   // Load messages when conversation changes
   useEffect(() => {
@@ -194,13 +214,12 @@ function WebScrapingDashboard() {
       console.log('Conversation ID changed, loading messages for:', currentConversationId);
       loadChatMessages(currentConversationId);
     } else {
+      console.log('Clearing chat messages - no active project or conversation');
       setChatMessages([]);
     }
-  }, [activeProjectId, currentConversationId]); // Removed loadChatMessages to avoid infinite loops
+  }, [activeProjectId, currentConversationId, loadChatMessages]); // Added loadChatMessages back
 
   const [activeTab, setActiveTab] = useState('projects');
-  const [selectedAiModel, setSelectedAiModel] = useState('gpt-4o-mini');
-  const [isModelDropdownOpen, setIsModelDropdownOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
 
   const [isRagPromptModalOpen, setIsRagPromptModalOpen] = useState(false);
@@ -227,16 +246,7 @@ function WebScrapingDashboard() {
   const [scrapingResultToDelete, setScrapingResultToDelete] = useState(null);
   const [isDeletingScrapingResult, setIsDeletingScrapingResult] = useState(false);
 
-  const aiModels = [
-    { id: 'gpt-4o-mini', name: 'GPT-4o Mini', description: 'Faster, more efficient version' },
-    { id: 'gpt-4o', name: 'GPT-4o', description: 'OpenAI\'s powerful multimodal model' },
-    { id: 'gemini/gemini-2.0-flash', name: 'gemini/gemini-2.0-flash', description: 'Google\'s multimodal AI model' }
-  ];
 
-  const getSelectedModelName = () => {
-    const model = aiModels.find(model => model.id === selectedAiModel);
-    return model ? model.name : 'Unknown Model';
-  };
 
   const handleAddProject = async (projectName) => {
     try {
@@ -640,7 +650,7 @@ function WebScrapingDashboard() {
     }
   };
 
-  const handleSendMessage = async (userMessage, modelName, callback) => {
+  const handleSendMessage = async (userMessage, callback) => {
     if (!activeProject || activeProject.ragStatus !== 'enabled') {
       console.log('RAG not enabled for this project, cannot send message');
       if (callback) callback();
@@ -676,26 +686,23 @@ function WebScrapingDashboard() {
       };
       setChatMessages(prev => [...prev, tempUserMessage]);
 
-      // Use enhanced RAG API for intelligent responses and formatting
-      const response = await queryEnhancedRagApi(
+      // Use the proper chat API that saves messages to database
+      const response = await sendChatMessage(
         activeProjectId,
         userMessage,
-        selectedAiModel || 'gpt-4o-mini'
+        conversationIdToUse
       );
 
-      console.log('Response from enhanced RAG:', response);
+      console.log('Response from chat API:', response);
 
-      // Add the AI response to chat messages with enhanced formatting
-      if (response && response.answer) {
-        const aiMessage = {
-          id: 'ai-' + Date.now(),
-          role: 'assistant',
-          content: response.answer,
-          timestamp: new Date(),
-          isEnhanced: true // Flag to indicate this is an enhanced response
-        };
-        setChatMessages(prev => [...prev, aiMessage]);
-      }
+      // Remove the temporary user message and add the real messages
+      setChatMessages(prev => prev.filter(msg => msg.id !== tempUserMessage.id));
+
+      // Reload messages from database to get the saved conversation
+      await loadChatMessages(conversationIdToUse);
+
+      // Reload conversations to get updated titles (especially for first message)
+      await loadConversations();
 
       // Call the callback to hide typing indicator
       if (callback) callback();
@@ -1397,7 +1404,6 @@ function WebScrapingDashboard() {
            <ChatPanel
              key={currentActiveProject.id + '-chat'}
              isRagMode={currentActiveProject.ragStatus === 'enabled'}
-             selectedModelName={selectedAiModel}
              onSendMessage={handleSendMessage}
              conversations={conversations[activeProjectId] || []}
              currentConversationId={currentConversationId}
@@ -1467,39 +1473,9 @@ function WebScrapingDashboard() {
             </div>
           </div>
           <div className="flex items-center space-x-4">
-            <div className="relative">
-              <button
-                onClick={() => setIsModelDropdownOpen(!isModelDropdownOpen)}
-                className="btn-secondary flex items-center space-x-2 px-4 py-2"
-              >
-                <Database size={16} className="text-purple-300" />
-                <span>AI: {getSelectedModelName()}</span>
-                <ChevronDown size={16} className={`transition-transform ${isModelDropdownOpen ? 'rotate-180' : ''}`} />
-              </button>
-              {isModelDropdownOpen && (
-                <div className="absolute right-0 mt-2 w-64 glass-dark rounded-xl shadow-2xl border border-purple-500/30 z-20 animate-fadeIn">
-                  <div className="p-3">
-                    <h3 className="text-sm font-semibold text-white mb-3 px-2">Select AI Model</h3>
-                    {aiModels.map(model => (
-                      <button
-                        key={model.id}
-                        onClick={() => {
-                          setSelectedAiModel(model.id);
-                          setIsModelDropdownOpen(false);
-                        }}
-                        className={`w-full text-left p-3 rounded-lg flex flex-col transition-all duration-200 ${
-                          selectedAiModel === model.id
-                            ? 'bg-indigo-600/50 border border-indigo-500'
-                            : 'hover:bg-purple-700/50 border border-transparent'
-                        }`}
-                      >
-                        <span className="font-medium text-white">{model.name}</span>
-                        <span className="text-xs text-purple-300">{model.description}</span>
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
+            <div className="flex items-center space-x-2 px-4 py-2 glass-dark rounded-lg border border-purple-500/30">
+              <Database size={16} className="text-purple-300" />
+              <span className="text-white text-sm font-medium">AI: Azure OpenAI GPT-4o</span>
             </div>
             <button
               onClick={openSettingsModal}

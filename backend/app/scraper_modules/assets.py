@@ -3,19 +3,14 @@ This module contains configuration variables and constants
 that are used across different parts of the application.
 """
 
-
-GEMINI_MODEL_FULLNAME="gemini/gemini-1.5-flash"
-OPENAI_MODEL_FULLNAME="gpt-4o"
-DEEPSEEK_MODEL_FULLNAME ="groq/deepseek-r1-distill-llama-70b"
-MODELS_USED = {
-    OPENAI_MODEL_FULLNAME: {"OPENAI_API_KEY"},
-    GEMINI_MODEL_FULLNAME: {"GEMINI_API_KEY"},
-    DEEPSEEK_MODEL_FULLNAME : {"GROQ_API_KEY"},
-}
-
-# Azure OpenAI model configuration (consistent with old crawler for RAG)
+# Azure OpenAI model configuration - only models used in the application
 AZURE_EMBEDDING_MODEL = "text-embedding-ada-002"
-AZURE_CHAT_MODEL = "gpt-4o" # Ensure this is available for text_processing
+AZURE_CHAT_MODEL = "gpt-4o"
+
+# Models configuration for Azure OpenAI only
+MODELS_USED = {
+    AZURE_CHAT_MODEL: {"AZURE_OPENAI_API_KEY"},
+}
 
 # Timeout settings for web scraping
 TIMEOUT_SETTINGS = {

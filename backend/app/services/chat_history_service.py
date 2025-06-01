@@ -250,8 +250,129 @@ class ChatHistoryService:
                 .update({"metadata": metadata})\
                 .eq("id", str(message_id))\
                 .execute()
-            
+
             return bool(response.data)
-            
+
         except Exception as e:
             raise HTTPException(status_code=500, detail=f"Error updating message metadata: {str(e)}")
+
+    async def update_conversation_title(
+        self,
+        project_id: UUID,
+        conversation_id: UUID,
+        title: str
+    ) -> bool:
+        """
+        Update the conversation title by storing it in the system message metadata.
+
+        Args:
+            project_id (UUID): Project ID
+            conversation_id (UUID): Conversation ID
+            title (str): Generated conversation title
+
+        Returns:
+            bool: True if successful
+
+        Raises:
+            HTTPException: If update fails
+        """
+        try:
+            # First, try to find an existing system message for this conversation
+            existing_response = supabase.table("chat_history")\
+                .select("id, metadata")\
+                .eq("project_id", str(project_id))\
+                .eq("conversation_id", str(conversation_id))\
+                .eq("message_role", "system")\
+                .order("created_at", desc=True)\
+                .limit(1)\
+                .execute()
+
+            if existing_response.data:
+                # Update existing system message with title
+                existing_metadata = existing_response.data[0]["metadata"] or {}
+                existing_metadata["conversation_title"] = title
+
+                response = supabase.table("chat_history")\
+                    .update({"metadata": existing_metadata})\
+                    .eq("id", existing_response.data[0]["id"])\
+                    .execute()
+
+                return bool(response.data)
+            else:
+                # Create a new system message with the title
+                await self.save_message(
+                    project_id=project_id,
+                    conversation_id=conversation_id,
+                    role="system",
+                    content="Conversation title set",
+                    metadata={"conversation_title": title, "title_set_at": datetime.now().isoformat()}
+                )
+                return True
+
+        except Exception as e:
+            raise HTTPException(status_code=500, detail=f"Error updating conversation title: {str(e)}")
+
+    async def get_conversation_title(
+        self,
+        project_id: UUID,
+        conversation_id: UUID
+    ) -> Optional[str]:
+        """
+        Get the conversation title from system message metadata.
+
+        Args:
+            project_id (UUID): Project ID
+            conversation_id (UUID): Conversation ID
+
+        Returns:
+            Optional[str]: Conversation title if exists
+        """
+        try:
+            response = supabase.table("chat_history")\
+                .select("metadata")\
+                .eq("project_id", str(project_id))\
+                .eq("conversation_id", str(conversation_id))\
+                .eq("message_role", "system")\
+                .order("created_at", desc=True)\
+                .limit(1)\
+                .execute()
+
+            if response.data and response.data[0]["metadata"]:
+                return response.data[0]["metadata"].get("conversation_title")
+
+            return None
+
+        except Exception:
+            # Don't raise an exception for title retrieval failures
+            return None
+
+    async def is_first_user_message(
+        self,
+        project_id: UUID,
+        conversation_id: UUID
+    ) -> bool:
+        """
+        Check if this is the first user message in the conversation.
+
+        Args:
+            project_id (UUID): Project ID
+            conversation_id (UUID): Conversation ID
+
+        Returns:
+            bool: True if this is the first user message
+        """
+        try:
+            response = supabase.table("chat_history")\
+                .select("id")\
+                .eq("project_id", str(project_id))\
+                .eq("conversation_id", str(conversation_id))\
+                .eq("message_role", "user")\
+                .limit(1)\
+                .execute()
+
+            # If no user messages exist, this will be the first
+            return len(response.data) == 0
+
+        except Exception:
+            # If we can't determine, assume it's not the first
+            return False

@@ -6,6 +6,7 @@ from uuid import UUID
 from fastapi import Depends, HTTPException
 import uuid
 import time
+import os
 from datetime import datetime
 
 from ..database import supabase
@@ -15,12 +16,14 @@ from ..utils.embedding import generate_embeddings, calculate_embedding_cost, pro
 from ..scraper_modules.assets import AZURE_EMBEDDING_MODEL, AZURE_CHAT_MODEL # Corrected path
 from ..utils.websocket_manager import manager
 from .chat_history_service import ChatHistoryService # Corrected relative import
+from .title_generation_service import TitleGenerationService
 
 class RAGService:
     """Service for RAG functionality."""
-    
+
     def __init__(self):
         self.chat_history_service = ChatHistoryService()
+        self.title_generation_service = TitleGenerationService()
 
     async def get_chat_messages(self, project_id: UUID, conversation_id: Optional[UUID] = None) -> List[ChatMessageResponse]:
         """
@@ -48,7 +51,6 @@ class RAGService:
         self,
         project_id: UUID,
         query: str,
-        azure_credentials: Dict[str, str],
         llm_model: str = None,
         conversation_id: Optional[UUID] = None,
         session_id: Optional[UUID] = None
@@ -59,8 +61,7 @@ class RAGService:
         Args:
             project_id (UUID): Project ID
             query (str): Query text
-            llm_model (str): Azure OpenAI deployment name (e.g., "gpt-35-turbo")
-            azure_credentials (Dict[str, str]): Dictionary containing 'api_key', 'endpoint', and optional 'deployment_name'
+            llm_model (str): Azure OpenAI deployment name (e.g., "gpt-4o")
 
         Returns:
             RAGQueryResponse: Response with answer and sources
@@ -68,9 +69,15 @@ class RAGService:
         Raises:
             HTTPException: If project not found, RAG not enabled, no data available, or missing credentials
         """
-        # Check if Azure OpenAI credentials are provided
-        if not azure_credentials or 'api_key' not in azure_credentials or 'endpoint' not in azure_credentials:
-            raise HTTPException(status_code=400, detail="Azure OpenAI credentials (api_key and endpoint) are required")
+        # Get Azure OpenAI credentials from environment variables
+        azure_credentials = {
+            "api_key": os.getenv("AZURE_OPENAI_API_KEY"),
+            "endpoint": os.getenv("AZURE_OPENAI_ENDPOINT"),
+            "api_version": os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
+        }
+
+        if not azure_credentials["api_key"] or not azure_credentials["endpoint"]:
+            raise HTTPException(status_code=500, detail="Azure OpenAI credentials not configured in environment variables")
 
         # Check if project exists and has RAG enabled
         project_response = supabase.table("projects").select("rag_enabled").eq("id", str(project_id)).single().execute()
@@ -327,10 +334,9 @@ CONTEXT USAGE:
         )
 
     async def post_chat_message(
-        self, 
-        project_id: UUID, 
-        content: str, 
-        azure_credentials: Dict[str, str],
+        self,
+        project_id: UUID,
+        content: str,
         conversation_id: Optional[UUID] = None,
         session_id: Optional[UUID] = None
     ) -> ChatMessageResponse:
@@ -340,7 +346,6 @@ CONTEXT USAGE:
         Args:
             project_id (UUID): Project ID
             content (str): Message content
-            azure_credentials (Dict[str, str]): Dictionary containing 'api_key', 'endpoint', and optional 'deployment_name'
             conversation_id (Optional[UUID]): Conversation ID, creates new if None
             session_id (Optional[UUID]): Optional scrape session ID
 
@@ -350,13 +355,22 @@ CONTEXT USAGE:
         Raises:
             HTTPException: If Azure OpenAI credentials are missing
         """
-        # Check if Azure OpenAI credentials are provided
-        if not azure_credentials or 'api_key' not in azure_credentials or 'endpoint' not in azure_credentials:
-            raise HTTPException(status_code=400, detail="Azure OpenAI credentials (api_key and endpoint) are required")
+        # Get Azure OpenAI credentials from environment variables
+        azure_credentials = {
+            "api_key": os.getenv("AZURE_OPENAI_API_KEY"),
+            "endpoint": os.getenv("AZURE_OPENAI_ENDPOINT"),
+            "api_version": os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
+        }
+
+        if not azure_credentials["api_key"] or not azure_credentials["endpoint"]:
+            raise HTTPException(status_code=500, detail="Azure OpenAI credentials not configured in environment variables")
 
         # Create or use existing conversation
         if not conversation_id:
             conversation_id = await self.chat_history_service.create_conversation(project_id, session_id)
+
+        # Check if this is the first user message in the conversation
+        is_first_message = await self.chat_history_service.is_first_user_message(project_id, conversation_id)
 
         # Save user message
         user_message_id = await self.chat_history_service.save_message(
@@ -367,6 +381,31 @@ CONTEXT USAGE:
             content=content,
             metadata={"timestamp": datetime.now().isoformat()}
         )
+
+        # Generate conversation title if this is the first user message
+        if is_first_message:
+            try:
+                # Generate title using AI
+                generated_title = await self.title_generation_service.generate_title(content)
+
+                # Use fallback if AI generation fails
+                if not generated_title:
+                    generated_title = self.title_generation_service.generate_fallback_title(content)
+
+                # Update conversation with the generated title
+                await self.chat_history_service.update_conversation_title(
+                    project_id, conversation_id, generated_title
+                )
+            except Exception as e:
+                # If title generation fails, use fallback
+                fallback_title = self.title_generation_service.generate_fallback_title(content)
+                try:
+                    await self.chat_history_service.update_conversation_title(
+                        project_id, conversation_id, fallback_title
+                    )
+                except Exception:
+                    # If even fallback fails, continue without title
+                    pass
 
         # Create user message
         user_message = ChatMessageResponse(
@@ -384,7 +423,6 @@ CONTEXT USAGE:
             project_id,
             content,
             deployment_name,
-            azure_credentials,
             conversation_id,
             session_id
         )

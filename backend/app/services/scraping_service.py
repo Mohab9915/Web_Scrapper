@@ -21,7 +21,7 @@ from ..utils.text_processing import format_data_for_display # Added import
 # New imports from Scrape_Master modules
 from ..scraper_modules.markdown import fetch_and_store_markdowns, read_raw_data
 from ..scraper_modules.scraper import scrape_urls as new_scrape_structured_data # aliased
-from ..scraper_modules.assets import OPENAI_MODEL_FULLNAME, AZURE_EMBEDDING_MODEL # Keep AZURE_EMBEDDING_MODEL if RAG uses it
+from ..scraper_modules.assets import AZURE_CHAT_MODEL, AZURE_EMBEDDING_MODEL # Keep AZURE_EMBEDDING_MODEL if RAG uses it
 # Note: AZURE_CHAT_MODEL might not be used by the new scraper logic directly, review if needed for RAG or other parts.
 # The new scraper uses LiteLLM, so model selection is handled differently.
 

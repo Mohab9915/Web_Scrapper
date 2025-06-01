@@ -111,17 +111,17 @@ const RagManagement = ({ projectId, onStatusUpdate }) => {
         
         <div className="stat-item">
           <span className="stat-label">Total Sessions:</span>
-          <span className="stat-value">{ragStatus.total_sessions}</span>
+          <span className="stat-value stat-number">{ragStatus.total_sessions}</span>
         </div>
-        
+
         <div className="stat-item">
           <span className="stat-label">RAG Ingested:</span>
-          <span className="stat-value">{ragStatus.rag_ingested_sessions}</span>
+          <span className="stat-value stat-number">{ragStatus.rag_ingested_sessions}</span>
         </div>
-        
+
         <div className="stat-item">
           <span className="stat-label">Total Embeddings:</span>
-          <span className="stat-value">{ragStatus.total_embeddings}</span>
+          <span className="stat-value stat-number">{ragStatus.total_embeddings}</span>
         </div>
       </div>
 
@@ -269,6 +269,11 @@ const RagManagement = ({ projectId, onStatusUpdate }) => {
 
         .stat-value.disabled {
           color: #dc3545;
+        }
+
+        .stat-value.stat-number {
+          color: #007bff;
+          font-weight: bold;
         }
 
         .sessions-list h4 {

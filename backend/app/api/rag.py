@@ -38,41 +38,20 @@ async def query_rag(
     rag_service: RAGService = Depends()
 ):
     """
-    Query the RAG system using Azure OpenAI or OpenAI.
+    Query the RAG system using Azure OpenAI.
 
     Args:
         project_id (UUID): Project ID
-        request (RAGQueryRequest): Request data containing query, model name, and credentials
+        request (RAGQueryRequest): Request data containing query and model name
 
     Returns:
         RAGQueryResponse: Response with answer and sources
-
-    Raises:
-        HTTPException: If credentials are missing
     """
     # Get model name from request or default to environment variable
     model_name = request.model_name or os.getenv("AZURE_OPENAI_MODEL", "gpt-4o")
-    
-    # Determine which service to use based on model name or explicit request
-    if (request.use_openai or model_name == "gpt-4o"):
-        # Use OpenAI directly for gpt-4o
-        openai_key = request.openai_key or os.getenv("OPENAI_API_KEY")
-        if not openai_key:
-            raise HTTPException(status_code=400, detail="OpenAI API key is required for gpt-4o model")
-        return await rag_service.query_rag_openai(project_id, request.query, openai_key, "gpt-4o")
-    else:
-        # Use Azure OpenAI for gpt-4o-mini
-        # Get Azure credentials from environment if not provided in request
-        azure_credentials = request.azure_credentials or {
-            "api_key": os.getenv("AZURE_OPENAI_API_KEY"),
-            "endpoint": os.getenv("AZURE_OPENAI_ENDPOINT"),
-            "api_version": os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
-        }
 
-        if not azure_credentials or not azure_credentials.get("api_key") or not azure_credentials.get("endpoint"):
-            raise HTTPException(status_code=400, detail="Azure OpenAI credentials (api_key and endpoint) are required")
-
-        return await rag_service.query_rag(project_id, request.query, azure_credentials, model_name)
+    # Use Azure OpenAI for all queries
+    return await rag_service.query_rag(project_id, request.query, model_name)
 
 @router.post("/projects/{project_id}/enhanced-query-rag", response_model=RAGQueryResponse)
 async def enhanced_query_rag(
@@ -84,24 +63,11 @@ async def enhanced_query_rag(
 
     Args:
         project_id (UUID): Project ID
-        request (RAGQueryRequest): Request data containing query and credentials
+        request (RAGQueryRequest): Request data containing query
 
     Returns:
         RAGQueryResponse: Enhanced formatted response
-
-    Raises:
-        HTTPException: If credentials are missing
     """
-    # Get Azure credentials from environment if not provided in request
-    azure_credentials = request.azure_credentials or {
-        "api_key": os.getenv("AZURE_OPENAI_API_KEY"),
-        "endpoint": os.getenv("AZURE_OPENAI_ENDPOINT"),
-        "api_version": os.getenv("AZURE_OPENAI_API_VERSION", "2024-05-01-preview")
-    }
-
-    if not azure_credentials.get("api_key") or not azure_credentials.get("endpoint"):
-        raise HTTPException(status_code=400, detail="Azure OpenAI credentials are required for enhanced RAG")
-
     # Use the enhanced RAG service directly
     from app.services.enhanced_rag_service import EnhancedRAGService
     enhanced_rag_service = EnhancedRAGService()
@@ -111,7 +77,6 @@ async def enhanced_query_rag(
     return await enhanced_rag_service.enhanced_query_rag(
         project_id,
         request.query,
-        azure_credentials,
         model_name
     )
 
@@ -135,20 +100,9 @@ async def post_chat_message(
     Returns:
         ChatMessageResponse: Response with assistant message
 
-    Raises:
-        HTTPException: If Azure OpenAI credentials are missing
     """
-    # Get Azure credentials from request or environment
-    azure_credentials = request.azure_credentials or {
-        "api_key": os.getenv("AZURE_OPENAI_API_KEY"),
-        "endpoint": os.getenv("AZURE_OPENAI_ENDPOINT"),
-        "api_version": os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
-    }
-    
-    if not azure_credentials or not azure_credentials.get("api_key") or not azure_credentials.get("endpoint"):
-        raise HTTPException(status_code=400, detail="Azure OpenAI credentials (api_key and endpoint) are required")
-
-    return await rag_service.post_chat_message(project_id, request.content, azure_credentials, conversation_id, session_id)
+    # Use Azure OpenAI from environment variables
+    return await rag_service.post_chat_message(project_id, request.content, conversation_id, session_id)
 
 @router.get("/projects/{project_id}/conversations")
 async def get_project_conversations(

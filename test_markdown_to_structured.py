@@ -4,7 +4,7 @@ import json # Import the json module
 from backend.app.scraper_modules.scraper import scrape_urls
 from backend.app.scraper_modules.markdown import save_raw_data, read_raw_data # Assuming read_raw_data is needed if scrape_urls uses it internally
 from backend.app.scraper_modules.utils import generate_unique_name
-from backend.app.scraper_modules.assets import OPENAI_MODEL_FULLNAME, GEMINI_MODEL_FULLNAME # Or any other model
+from backend.app.scraper_modules.assets import AZURE_CHAT_MODEL # Use Azure OpenAI model
 from backend.app.database import supabase # To ensure DB is accessible for save/read if needed by scrape_urls's dependencies
 
 # Ensure API keys are set in your environment for the chosen model, e.g., OPENAI_API_KEY
@@ -49,7 +49,7 @@ async def main():
 
     # 4. Call scrape_urls
     # Select a model. Ensure its API key is available.
-    selected_model = OPENAI_MODEL_FULLNAME 
+    selected_model = AZURE_CHAT_MODEL
     print(f"Calling scrape_urls for unique_name '{unique_name}' with model: {selected_model}...\n")
 
     try:

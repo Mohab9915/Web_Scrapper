@@ -317,30 +317,11 @@ export async function queryRagApi(projectId, userMessage, modelName) {
                   modelName === 'GPT-4o' ||
                   modelName.toLowerCase() === 'gpt-4o';
 
-  let requestBody;
-
-  if (isGpt4o) {
-    // Use OpenAI API for GPT-4o
-    const openaiApiKey = getOpenAIApiKey();
-    requestBody = {
-      query: userMessage,
-      model_name: 'gpt-4o',  // Force the model name to be gpt-4o
-      use_openai: true,
-      openai_key: openaiApiKey
-    };
-  } else {
-    // Use Azure for other models
-    const azureCredentials = getAzureOpenAICredentials();
-    requestBody = {
-      query: userMessage,
-      model_name: modelName,
-      azure_credentials: {
-        api_key: azureCredentials.api_key,
-        endpoint: azureCredentials.endpoint,
-        deployment_name: modelName
-      }
-    };
-  }
+  // Use Azure OpenAI for all queries - credentials come from environment
+  const requestBody = {
+    query: userMessage,
+    model_name: modelName || 'gpt-4o'
+  };
 
   return fetchWithErrorHandling(
     `${API_URL}/projects/${projectId}/query-rag`,
@@ -356,16 +337,9 @@ export async function queryRagApi(projectId, userMessage, modelName) {
  * Query the Enhanced RAG API with intelligent formatting and structured data processing
  */
 export async function queryEnhancedRagApi(projectId, userMessage, modelName) {
-  const azureCredentials = getAzureOpenAICredentials();
-
   const requestBody = {
     query: userMessage,
-    model_name: modelName || 'gpt-4o-mini',
-    azure_credentials: {
-      api_key: azureCredentials.api_key,
-      endpoint: azureCredentials.endpoint,
-      deployment_name: modelName || 'gpt-4o-mini'
-    }
+    model_name: modelName || 'gpt-4o'
   };
 
   return fetchWithErrorHandling(
@@ -395,31 +369,24 @@ export async function getChatMessages(projectId, conversationId = null) {
  * Send a chat message and get a response
  */
 export async function sendChatMessage(projectId, content, conversationId = null, sessionId = null) {
-  const azureCredentials = getAzureOpenAICredentials();
-  
   let url = `${API_URL}/projects/${projectId}/chat`;
   const params = new URLSearchParams();
-  
+
   if (conversationId) {
     params.append('conversation_id', conversationId);
   }
   if (sessionId) {
     params.append('session_id', sessionId);
   }
-  
+
   // Add query parameters to the URL
   if (params.toString()) {
     url += `?${params.toString()}`;
   }
-  
-  // The message body includes both content and Azure credentials
+
+  // The message body includes only content - Azure credentials come from environment
   const messageBody = {
-    content: content,
-    azure_credentials: {
-      api_key: azureCredentials.api_key,
-      endpoint: azureCredentials.endpoint,
-      deployment_name: AZURE_CHAT_MODEL
-    }
+    content: content
   };
   
   return fetchWithErrorHandling(url, {

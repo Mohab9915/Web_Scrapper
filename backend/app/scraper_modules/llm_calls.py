@@ -34,14 +34,13 @@ def call_llm_model(data,response_format,model,system_message,extra_user_instruct
             - token_counts: A dict with "input_tokens" and "output_tokens".
             - cost: The overall cost (in USD) for the API call.
     """
-    # 1) Retrieve the single API key name for this model from MODELS_USED
-    env_var_name = list(MODELS_USED[model])[0]  # e.g., "GEMINI_API_KEY"
-    # 2) Retrieve the actual key from session or OS
-    env_value = get_api_key(model)
-    print("env variable is:" + env_value)
-    # 3) Set it in os.environ so that litellm / underlying client sees it
-    if env_value:
-        os.environ[env_var_name] = env_value
+    # Use Azure OpenAI credentials from environment variables
+    azure_api_key = os.environ.get("AZURE_OPENAI_API_KEY")
+    azure_endpoint = os.environ.get("AZURE_OPENAI_ENDPOINT")
+    azure_api_version = os.environ.get("AZURE_OPENAI_API_VERSION", "2024-05-01-preview")
+
+    if not azure_api_key or not azure_endpoint:
+        raise ValueError("Azure OpenAI credentials not found in environment variables")
 
     model_max_tokens = get_max_tokens(model)
     if max_tokens is not None:
@@ -55,31 +54,17 @@ def call_llm_model(data,response_format,model,system_message,extra_user_instruct
         {"role": "user","content": f"{USER_MESSAGE} {extra_user_instruction} {data}"}
     ]
 
-    # Prepare parameters for the LiteLLM completion call
+    # Prepare parameters for Azure OpenAI via LiteLLM
     params = {
-        "model": model,
+        "model": f"azure/{model}",
         "messages": messages,
         "response_format": response_format,
+        "api_base": azure_endpoint,
+        "api_key": azure_api_key,
+        "api_version": azure_api_version,
     }
     if max_tokens is not None:
         params["max_tokens"] = max_tokens
-
-    # Check if we have Azure OpenAI configuration
-    azure_api_base = os.environ.get("AZURE_AI_API_BASE") or os.environ.get("AZURE_OPENAI_API_BASE")
-    azure_api_key = os.environ.get("AZURE_AI_API_KEY") or os.environ.get("AZURE_OPENAI_API_KEY")
-    azure_api_version = os.environ.get("AZURE_OPENAI_API_VERSION", "2024-05-01-preview")
-
-    if azure_api_base and azure_api_key and model in ["gpt-35-turbo", "gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"]:
-        # Use Azure OpenAI format for LiteLLM
-        params["model"] = f"azure/{model}"
-        params["api_base"] = azure_api_base
-        params["api_key"] = azure_api_key
-        params["api_version"] = azure_api_version
-    else:
-        # Fallback to standard OpenAI API key if available
-        openai_api_key = os.environ.get("OPENAI_API_KEY")
-        if openai_api_key:
-            params["api_key"] = openai_api_key
 
     # Call the LLM using LiteLLM
     response = completion(**params)
