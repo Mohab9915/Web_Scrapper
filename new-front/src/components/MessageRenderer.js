@@ -1,11 +1,11 @@
-import React, { memo, useMemo } from 'react';
+import React, { memo, useMemo, useCallback } from 'react';
 import { Copy, ExternalLink, ShoppingCart, DollarSign, Star, Package } from 'lucide-react';
 import StableChartRenderer from './StableChartRenderer';
 
 const MessageRenderer = memo(({ content, chartData, onCopy }) => {
 
-  // Define helper functions first to avoid hoisting issues
-  const extractChartData = (text) => {
+  // Define helper functions using useCallback to avoid dependency issues
+  const extractChartData = useCallback((text) => {
     try {
       // Look for JSON code blocks that contain chart data
       const jsonMatch = text.match(/```json\s*(\{[\s\S]*?\})\s*```/);
@@ -23,7 +23,7 @@ const MessageRenderer = memo(({ content, chartData, onCopy }) => {
       console.error('Error parsing chart data:', error);
       return null;
     }
-  };
+  }, []);
 
   const renderEnhancedText = (text) => {
     // Split by paragraphs and render with better formatting
@@ -320,18 +320,31 @@ const MessageRenderer = memo(({ content, chartData, onCopy }) => {
 
   // Memoize chart data - prioritize chartData prop over extracting from content
   const finalChartData = useMemo(() => {
+    console.log('MessageRenderer: Processing chart data', {
+      hasChartDataProp: !!chartData,
+      chartDataType: chartData?.chartType,  // Note: camelCase after API transformation
+      hasChartDataData: !!chartData?.data
+    });
+
     // If chartData is provided as a prop, use it directly
-    if (chartData && chartData.chart_type && chartData.data) {
+    // Note: API transforms snake_case to camelCase, so chart_type becomes chartType
+    if (chartData && chartData.chartType && chartData.data) {
+      console.log('MessageRenderer: Using chartData prop', chartData);
       return chartData;
     }
     // Otherwise, try to extract from content (legacy support)
-    return extractChartData(content);
+    const extracted = extractChartData(content);
+    console.log('MessageRenderer: Extracted from content', extracted);
+    return extracted;
   }, [chartData, content, extractChartData]);
 
   // Parse and render different content types
   const renderContent = useMemo(() => {
+    console.log('MessageRenderer: Rendering content', { hasFinalChartData: !!finalChartData });
+
     // Handle chart data first (highest priority)
     if (finalChartData) {
+      console.log('MessageRenderer: Rendering chart with text');
       return renderChartWithText(content, finalChartData);
     }
 

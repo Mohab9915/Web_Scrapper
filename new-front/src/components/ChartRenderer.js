@@ -9,7 +9,12 @@ const ChartRenderer = ({ chartData, className = "" }) => {
   const memoizedChartData = useMemo(() => chartData, [JSON.stringify(chartData)]);
 
   useEffect(() => {
-    if (!memoizedChartData || !canvasRef.current) return;
+    console.log('ChartRenderer: useEffect triggered', { memoizedChartData, hasCanvas: !!canvasRef.current });
+
+    if (!memoizedChartData || !canvasRef.current) {
+      console.log('ChartRenderer: Early return - no data or canvas');
+      return;
+    }
 
     // Destroy existing chart
     if (chartRef.current) {
@@ -19,14 +24,16 @@ const ChartRenderer = ({ chartData, className = "" }) => {
 
     const ctx = canvasRef.current.getContext('2d');
 
-    // Validate chart data structure
-    if (!memoizedChartData.data || !memoizedChartData.chart_type) {
-      console.error('Invalid chart data structure:', memoizedChartData);
+    // Validate chart data structure (note: API transforms snake_case to camelCase)
+    if (!memoizedChartData.data || !memoizedChartData.chartType) {
+      console.error('ChartRenderer: Invalid chart data structure:', memoizedChartData);
       return;
     }
 
+    console.log('ChartRenderer: Creating chart', { type: memoizedChartData.chartType, title: memoizedChartData.title });
+
     try {
-      if (memoizedChartData.chart_type === 'bar') {
+      if (memoizedChartData.chartType === 'bar') {
         // Prepare data for bar chart
         const labels = memoizedChartData.data.labels || [];
         const values = memoizedChartData.data.values || memoizedChartData.data.datasets?.[0]?.data || [];
@@ -73,7 +80,7 @@ const ChartRenderer = ({ chartData, className = "" }) => {
             }
           }
         });
-      } else if (memoizedChartData.chart_type === 'pie') {
+      } else if (memoizedChartData.chartType === 'pie') {
         // Prepare data for pie chart
         const labels = memoizedChartData.data.labels || [];
         const values = memoizedChartData.data.values || memoizedChartData.data.datasets?.[0]?.data || [];
@@ -109,7 +116,7 @@ const ChartRenderer = ({ chartData, className = "" }) => {
             }
           }
         });
-      } else if (memoizedChartData.chart_type === 'line') {
+      } else if (memoizedChartData.chartType === 'line') {
         // Prepare data for line chart
         const labels = memoizedChartData.data.labels || [];
         const values = memoizedChartData.data.values || memoizedChartData.data.datasets?.[0]?.data || [];
@@ -173,7 +180,7 @@ const ChartRenderer = ({ chartData, className = "" }) => {
 
   if (!memoizedChartData) return null;
 
-  if (memoizedChartData.chart_type === 'table') {
+  if (memoizedChartData.chartType === 'table') {
     return (
       <div className={`bg-gray-800 rounded-lg p-4 ${className}`}>
         <h3 className="text-lg font-semibold text-purple-200 mb-3">{memoizedChartData.title}</h3>
@@ -210,7 +217,7 @@ const ChartRenderer = ({ chartData, className = "" }) => {
     );
   }
 
-  if (memoizedChartData.chart_type === 'stats') {
+  if (memoizedChartData.chartType === 'stats') {
     // Handle different stats data formats
     let statsData = memoizedChartData.data.stats || [];
 

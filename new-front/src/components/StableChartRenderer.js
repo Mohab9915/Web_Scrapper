@@ -6,22 +6,22 @@ import ChartRenderer from './ChartRenderer';
  * and chart refreshing when parent components update
  */
 const StableChartRenderer = memo(({ chartData, className = "" }) => {
-  const [stableChartData, setStableChartData] = useState(null);
+  const [stableChartData, setStableChartData] = useState(chartData);
   const chartDataRef = useRef(null);
 
   useEffect(() => {
     // Only update if the chart data has actually changed
     const currentDataString = JSON.stringify(chartData);
     const previousDataString = JSON.stringify(chartDataRef.current);
-    
+
     if (currentDataString !== previousDataString) {
       chartDataRef.current = chartData;
       setStableChartData(chartData);
     }
   }, [chartData]);
 
-  // Don't render anything if we don't have stable chart data yet
-  if (!stableChartData) {
+  // Don't render anything if we don't have chart data
+  if (!stableChartData || !chartData) {
     return null;
   }
 
