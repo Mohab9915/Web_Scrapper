@@ -18,8 +18,13 @@
     "start": "PORT=9002 react-scripts start",
     "dev": "PORT=9002 react-scripts start",
     "build": "react-scripts build",
+    "build:prod": "GENERATE_SOURCEMAP=false react-scripts build",
+    "build:azure": "GENERATE_SOURCEMAP=false REACT_APP_API_URL=/api react-scripts build",
     "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "test:ci": "react-scripts test --coverage --ci --silent --passWithNoTests",
+    "eject": "react-scripts eject",
+    "serve": "npx serve -s build -l 3000",
+    "deploy:azure": "npm run build:azure && az webapp deployment source config-zip"
   },
   "eslintConfig": {
     "extends": [

@@ -31,10 +31,16 @@ function transformKeys(data) {
   return data;
 }
 
-// Backend API URL - use environment variable or fallback to localhost for development
+// Backend API URL - use environment variable or fallback to production (HTTPS)
 export const API_URL = process.env.REACT_APP_API_URL
   ? `${process.env.REACT_APP_API_URL}/api/v1`
   : 'https://scrapemaster-backend-prod.whitemeadow-57a6711f.eastus.azurecontainerapps.io/api/v1';
+
+// Debug logging for API URL configuration
+console.log('🔧 API Configuration Debug:');
+console.log('  - REACT_APP_API_URL:', process.env.REACT_APP_API_URL);
+console.log('  - NODE_ENV:', process.env.NODE_ENV);
+console.log('  - Final API_URL:', API_URL);
 
 // Get Azure OpenAI credentials from localStorage or use empty values
 const getAzureOpenAICredentials = () => {
@@ -60,11 +66,30 @@ const AZURE_CHAT_MODEL = "gpt-4o-mini";
 /**
  * Error handling wrapper for fetch requests
  */
-async function fetchWithErrorHandling(url, options) {
+async function fetchWithErrorHandling(url, options = {}) {
   try {
     console.log('🔄 Making API request to:', url);
     console.log('📤 Request options:', options);
-    const response = await fetch(url, options);
+
+    // Add default headers and timeout
+    const defaultOptions = {
+      headers: {
+        'Content-Type': 'application/json',
+        ...options.headers
+      },
+      ...options
+    };
+
+    // Add timeout to prevent hanging requests
+    const controller = new AbortController();
+    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
+
+    const response = await fetch(url, {
+      ...defaultOptions,
+      signal: controller.signal
+    });
+
+    clearTimeout(timeoutId);
 
     if (!response.ok) {
       let errorData;
@@ -138,6 +163,10 @@ async function fetchWithErrorHandling(url, options) {
       return {};
     }
   } catch (error) {
+    if (error.name === 'AbortError') {
+      console.error('❌ Request timeout:', url);
+      throw new Error('Request timeout - please try again');
+    }
     console.error('❌ API request failed:', error);
     throw error;
   }
@@ -154,7 +183,7 @@ export async function getProjects() {
  * Get a project by ID
  */
 export async function getProjectById(id) {
-  return fetchWithErrorHandling(`${API_URL}/projects/${id}/`);
+  return fetchWithErrorHandling(`${API_URL}/projects/${id}`);
 }
 
 /**
@@ -172,7 +201,7 @@ export async function createProject(name, initialUrls) {
  * Update a project's name
  */
 export async function updateProjectName(id, name) {
-  return fetchWithErrorHandling(`${API_URL}/projects/${id}/`, {
+  return fetchWithErrorHandling(`${API_URL}/projects/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name }),
@@ -183,7 +212,7 @@ export async function updateProjectName(id, name) {
  * Update a project's RAG status
  */
 export async function updateProjectRAGStatus(id, enabled) {
-  return fetchWithErrorHandling(`${API_URL}/projects/${id}/`, {
+  return fetchWithErrorHandling(`${API_URL}/projects/${id}`, {
     method: 'PUT',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ rag_enabled: enabled }),
@@ -194,7 +223,7 @@ export async function updateProjectRAGStatus(id, enabled) {
  * Delete a project
  */
 export async function deleteProject(id) {
-  return fetchWithErrorHandling(`${API_URL}/projects/${id}/`, {
+  return fetchWithErrorHandling(`${API_URL}/projects/${id}`, {
     method: 'DELETE',
   });
 }
@@ -203,7 +232,7 @@ export async function deleteProject(id) {
  * Get all scraped sessions for a project
  */
 export async function getScrapedSessions(projectId) {
-  return fetchWithErrorHandling(`${API_URL}/projects/${projectId}/sessions/`);
+  return fetchWithErrorHandling(`${API_URL}/projects/${projectId}/sessions`);
 }
 
 /**
@@ -213,7 +242,7 @@ export async function initiateInteractiveScrape(projectId, url) {
   try {
     // First, try to use the backend API
     return await fetchWithErrorHandling(
-      `${API_URL}/projects/${projectId}/initiate-interactive-scrape/`,
+      `${API_URL}/projects/${projectId}/initiate-interactive-scrape`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -261,7 +290,7 @@ export async function executeScrape(projectId, url, sessionId, forceRefresh = fa
 
   // Include Azure OpenAI credentials for embedding generation
   const rawResult = await fetchWithErrorHandling(
-    `${API_URL}/projects/${projectId}/execute-scrape/`,
+    `${API_URL}/projects/${projectId}/execute-scrape`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -295,7 +324,7 @@ export async function executeScrape(projectId, url, sessionId, forceRefresh = fa
  */
 export async function deleteScrapedSession(projectId, sessionId) {
   return fetchWithErrorHandling(
-    `${API_URL}/projects/${projectId}/sessions/${sessionId}/`,
+    `${API_URL}/projects/${projectId}/sessions/${sessionId}`,
     {
       method: 'DELETE',
     }
@@ -306,7 +335,7 @@ export async function deleteScrapedSession(projectId, sessionId) {
  * Get cache statistics
  */
 export async function fetchCacheStats() {
-  return fetchWithErrorHandling(`${API_URL}/cache/stats/`);
+  return fetchWithErrorHandling(`${API_URL}/cache/stats`);
 }
 
 /**
@@ -326,7 +355,7 @@ export async function queryRagApi(projectId, userMessage, modelName) {
   };
 
   return fetchWithErrorHandling(
-    `${API_URL}/projects/${projectId}/query-rag/`,
+    `${API_URL}/projects/${projectId}/query-rag`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -345,7 +374,7 @@ export async function queryEnhancedRagApi(projectId, userMessage, modelName) {
   };
 
   return fetchWithErrorHandling(
-    `${API_URL}/projects/${projectId}/enhanced-query-rag/`,
+    `${API_URL}/projects/${projectId}/enhanced-query-rag`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -358,7 +387,7 @@ export async function queryEnhancedRagApi(projectId, userMessage, modelName) {
  * Get chat messages for a project/conversation
  */
 export async function getChatMessages(projectId, conversationId = null) {
-  let url = `${API_URL}/projects/${projectId}/chat/`;
+  let url = `${API_URL}/projects/${projectId}/chat`;
   if (conversationId) {
     url += `?conversation_id=${conversationId}`;
   }
@@ -371,7 +400,7 @@ export async function getChatMessages(projectId, conversationId = null) {
  * Send a chat message and get a response
  */
 export async function sendChatMessage(projectId, content, conversationId = null, sessionId = null) {
-  let url = `${API_URL}/projects/${projectId}/chat/`;
+  let url = `${API_URL}/projects/${projectId}/chat`;
   const params = new URLSearchParams();
 
   if (conversationId) {
@@ -403,7 +432,7 @@ export async function sendChatMessage(projectId, content, conversationId = null,
  */
 export async function getProjectConversations(projectId, limit = 50) {
   return fetchWithErrorHandling(
-    `${API_URL}/projects/${projectId}/conversations/?limit=${limit}`
+    `${API_URL}/projects/${projectId}/conversations?limit=${limit}`
   );
 }
 
@@ -411,7 +440,7 @@ export async function getProjectConversations(projectId, limit = 50) {
  * Create a new conversation
  */
 export async function createConversation(projectId, sessionId = null) {
-  let url = `${API_URL}/projects/${projectId}/conversations/`;
+  let url = `${API_URL}/projects/${projectId}/conversations`;
   if (sessionId) {
     url += `?session_id=${sessionId}`;
   }
@@ -428,7 +457,7 @@ export async function createConversation(projectId, sessionId = null) {
  */
 export async function deleteConversation(projectId, conversationId) {
   return fetchWithErrorHandling(
-    `${API_URL}/projects/${projectId}/conversations/${conversationId}/`,
+    `${API_URL}/projects/${projectId}/conversations/${conversationId}`,
     {
       method: 'DELETE',
     }
@@ -440,6 +469,6 @@ export async function deleteConversation(projectId, conversationId) {
  */
 export async function getConversationMessages(projectId, conversationId, limit = 100) {
   return fetchWithErrorHandling(
-    `${API_URL}/projects/${projectId}/conversations/${conversationId}/messages/?limit=${limit}`
+    `${API_URL}/projects/${projectId}/conversations/${conversationId}/messages?limit=${limit}`
   );
 }

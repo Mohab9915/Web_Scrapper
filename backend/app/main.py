@@ -51,8 +51,13 @@ except (NameError, AttributeError) as e:
 
 @app.get("/health")
 async def health_check():
-    """Health check endpoint."""
-    return {"status": "ok"}
+    """Health check endpoint for deployment monitoring."""
+    return {
+        "status": "healthy",
+        "service": "Interactive Agentic Web Scraper & RAG System API",
+        "version": "0.1.0",
+        "timestamp": "2024-01-01T00:00:00Z"
+    }
 
 # Add download endpoint without API prefix
 @app.get("/download/{project_id}/{session_id}/{format}")

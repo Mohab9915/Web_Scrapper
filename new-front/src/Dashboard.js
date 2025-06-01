@@ -30,8 +30,11 @@ function WebScrapingDashboard() {
           const urlsController = new AbortController();
           const urlsTimeout = setTimeout(() => urlsController.abort(), 5000); // 5 second timeout
 
-          const urlsResponse = await fetch(`${API_URL}/projects/${project.id}/urls/`, {
-            signal: urlsController.signal
+          const urlsResponse = await fetch(`${API_URL}/projects/${project.id}/urls`, {
+            signal: urlsController.signal,
+            headers: {
+              'Content-Type': 'application/json',
+            }
           });
           clearTimeout(urlsTimeout);
 
@@ -42,8 +45,11 @@ function WebScrapingDashboard() {
             const sessionsController = new AbortController();
             const sessionsTimeout = setTimeout(() => sessionsController.abort(), 5000); // 5 second timeout
 
-            const sessionsResponse = await fetch(`${API_URL}/projects/${project.id}/sessions/`, {
-              signal: sessionsController.signal
+            const sessionsResponse = await fetch(`${API_URL}/projects/${project.id}/sessions`, {
+              signal: sessionsController.signal,
+              headers: {
+                'Content-Type': 'application/json',
+              }
             });
             clearTimeout(sessionsTimeout);
 
@@ -320,7 +326,11 @@ function WebScrapingDashboard() {
       }
 
       // Fetch project URLs to get conditions and display format (in parallel)
-      const projectUrlsPromise = fetch(`${API_URL}/projects/${projectId}/urls/`)
+      const projectUrlsPromise = fetch(`${API_URL}/projects/${projectId}/urls/`, {
+          headers: {
+            'Content-Type': 'application/json',
+          }
+        })
         .then(res => res.ok ? res.json() : [])
         .catch(err => {
           console.warn('Failed to fetch project URLs, using default values:', err);
@@ -532,7 +542,7 @@ function WebScrapingDashboard() {
       await updateProjectRAGStatus(projectId, true);
 
       // Call the enable-rag endpoint to process the data
-      const ragResponse = await fetch(`${API_URL}/projects/${projectId}/enable-rag/`, {
+      const ragResponse = await fetch(`${API_URL}/projects/${projectId}/enable-rag`, {
         method: 'POST'
       });
 
@@ -571,7 +581,7 @@ function WebScrapingDashboard() {
         console.log(`RAG enabled for project ${projectId}. All existing and future data will be considered for RAG.`);
 
         // Call the enable-rag endpoint to process the data
-        const ragResponse = await fetch(`${API_URL}/projects/${projectId}/enable-rag/`, {
+        const ragResponse = await fetch(`${API_URL}/projects/${projectId}/enable-rag`, {
           method: 'POST'
         });
 
@@ -728,7 +738,7 @@ function WebScrapingDashboard() {
 
     try {
       // Call the backend API to create a new URL
-      const response = await fetch(`${API_URL}/projects/${activeProjectId}/urls/`, {
+      const response = await fetch(`${API_URL}/projects/${activeProjectId}/urls`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
@@ -805,7 +815,7 @@ function WebScrapingDashboard() {
       setIsDeletingUrls(true);
 
       // Call the backend API to delete all URLs for this project
-      const response = await fetch(`${API_URL}/projects/${activeProjectId}/urls/`, {
+      const response = await fetch(`${API_URL}/projects/${activeProjectId}/urls`, {
         method: 'DELETE',
         headers: {
           'Content-Type': 'application/json',
@@ -863,7 +873,7 @@ function WebScrapingDashboard() {
         const urlId = urlToDelete.id;
         console.log("Sending DELETE request for URL ID:", urlId);
 
-        const response = await fetch(`${API_URL}/projects/${activeProjectId}/urls/${urlId}/`, {
+        const response = await fetch(`${API_URL}/projects/${activeProjectId}/urls/${urlId}`, {
           method: 'DELETE',
           headers: {
             'Content-Type': 'application/json',
@@ -944,7 +954,7 @@ function WebScrapingDashboard() {
       // Call the backend API to delete the scraping result if session_id is available
       if (scrapingResultToDelete.session_id) {
         try {
-          const response = await fetch(`${API_URL}/projects/${activeProjectId}/sessions/${scrapingResultToDelete.session_id}/`, {
+          const response = await fetch(`${API_URL}/projects/${activeProjectId}/sessions/${scrapingResultToDelete.session_id}`, {
             method: 'DELETE',
             headers: {
               'Content-Type': 'application/json',
@@ -1164,7 +1174,7 @@ function WebScrapingDashboard() {
       // Delete the corresponding scraping session from the backend if session_id is available
       if (historyItemToDelete.session_id) {
         try {
-          const response = await fetch(`${API_URL}/projects/${activeProjectId}/sessions/${historyItemToDelete.session_id}/`, {
+          const response = await fetch(`${API_URL}/projects/${activeProjectId}/sessions/${historyItemToDelete.session_id}`, {
             method: 'DELETE',
             headers: {
               'Content-Type': 'application/json',
@@ -1240,7 +1250,7 @@ function WebScrapingDashboard() {
   // Fetch URLs from the backend
   const fetchProjectUrls = useCallback(async (projectId) => {
     try {
-      const response = await fetch(`${API_URL}/projects/${projectId}/urls/`);
+      const response = await fetch(`${API_URL}/projects/${projectId}/urls`);
       if (!response.ok) {
         throw new Error('Failed to fetch URLs');
       }
