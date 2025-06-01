@@ -3,12 +3,6 @@ import { Copy, ExternalLink, ShoppingCart, DollarSign, Star, Package } from 'luc
 import StableChartRenderer from './StableChartRenderer';
 
 const MessageRenderer = memo(({ content, chartData, onCopy }) => {
-  // Check if content contains structured data patterns
-  const isStructuredResponse = content.includes('|') ||
-                              content.includes('```') ||
-                              content.includes('**') ||
-                              content.includes('###') ||
-                              content.includes('---');
 
   // Define helper functions first to avoid hoisting issues
   const extractChartData = (text) => {
@@ -332,7 +326,7 @@ const MessageRenderer = memo(({ content, chartData, onCopy }) => {
     }
     // Otherwise, try to extract from content (legacy support)
     return extractChartData(content);
-  }, [chartData, content]);
+  }, [chartData, content, extractChartData]);
 
   // Parse and render different content types
   const renderContent = useMemo(() => {
@@ -358,6 +352,7 @@ const MessageRenderer = memo(({ content, chartData, onCopy }) => {
 
     // Default text rendering with enhanced formatting
     return renderEnhancedText(content);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [content, finalChartData]);
 
   return (
