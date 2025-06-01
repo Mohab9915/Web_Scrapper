@@ -121,7 +121,7 @@ resource backendContainerApp 'Microsoft.App/containerApps@2023-05-01' = {
               value: '2024-12-01-preview'
             }
             {
-              name: 'AZURE_CHAT_MODEL'
+              name: 'AZURE_OPENAI_MODEL'
               value: 'gpt-4o'
             }
             {
