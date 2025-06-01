@@ -660,7 +660,7 @@ class EnhancedRAGService:
             api_key = azure_credentials.get("api_key")
             endpoint = azure_credentials.get("endpoint")
             api_version = azure_credentials.get("api_version", "2024-12-01-preview")
-            deployment = deployment_name or "model-router"
+            deployment = deployment_name or "gpt-4o"
 
             url = f"{endpoint}/openai/deployments/{deployment}/chat/completions?api-version={api_version}"
 
@@ -738,7 +738,7 @@ class EnhancedRAGService:
             api_key = azure_credentials.get("api_key")
             endpoint = azure_credentials.get("endpoint")
             api_version = azure_credentials.get("api_version", "2024-12-01-preview")
-            deployment = deployment_name or "model-router"
+            deployment = deployment_name or "gpt-4o"
 
             url = f"{endpoint}/openai/deployments/{deployment}/chat/completions?api-version={api_version}"
 
