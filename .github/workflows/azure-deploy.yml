@@ -38,45 +38,49 @@ jobs:
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-    - name: Deploy infrastructure to Azure
-      id: deploy
+    - name: Deploy infrastructure (Phase 1)
+      id: infrastructure
       run: |
-        DEPLOYMENT_NAME="scrapemaster-deployment-$(date +%Y%m%d-%H%M%S)"
+        INFRA_DEPLOYMENT_NAME="scrapemaster-infra-$(date +%Y%m%d-%H%M%S)"
         CONTAINER_REGISTRY_NAME="scrapemaster$(date +%s)"
 
+        echo "Deploying infrastructure (registry, environment, logs)..."
         az deployment group create \
           --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-          --template-file azure-container-apps.bicep \
-          --name "$DEPLOYMENT_NAME" \
+          --template-file azure-infrastructure.bicep \
+          --name "$INFRA_DEPLOYMENT_NAME" \
           --parameters \
             namePrefix=scrapemaster \
             environment=${{ github.event.inputs.environment || 'prod' }} \
-            supabaseUrl="${{ secrets.SUPABASE_URL }}" \
-            supabaseKey="${{ secrets.SUPABASE_KEY }}" \
-            azureOpenAIApiKey="${{ secrets.AZURE_OPENAI_API_KEY }}" \
-            azureOpenAIEndpoint="${{ secrets.AZURE_OPENAI_ENDPOINT }}" \
             containerRegistryName="$CONTAINER_REGISTRY_NAME"
 
-        # Get outputs from deployment
+        # Get outputs from infrastructure deployment
         REGISTRY_LOGIN_SERVER=$(az deployment group show \
           --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-          --name "$DEPLOYMENT_NAME" \
+          --name "$INFRA_DEPLOYMENT_NAME" \
           --query "properties.outputs.containerRegistryLoginServer.value" \
           --output tsv)
 
         REGISTRY_NAME=$(az deployment group show \
           --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-          --name "$DEPLOYMENT_NAME" \
+          --name "$INFRA_DEPLOYMENT_NAME" \
           --query "properties.outputs.containerRegistryName.value" \
+          --output tsv)
+
+        CONTAINER_APP_ENV_ID=$(az deployment group show \
+          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
+          --name "$INFRA_DEPLOYMENT_NAME" \
+          --query "properties.outputs.containerAppEnvironmentId.value" \
           --output tsv)
 
         echo "login_server=$REGISTRY_LOGIN_SERVER" >> $GITHUB_OUTPUT
         echo "registry_name=$REGISTRY_NAME" >> $GITHUB_OUTPUT
-        echo "deployment_name=$DEPLOYMENT_NAME" >> $GITHUB_OUTPUT
+        echo "container_app_env_id=$CONTAINER_APP_ENV_ID" >> $GITHUB_OUTPUT
+        echo "infra_deployment_name=$INFRA_DEPLOYMENT_NAME" >> $GITHUB_OUTPUT
 
     - name: Login to Azure Container Registry
       run: |
-        az acr login --name ${{ steps.deploy.outputs.registry_name }}
+        az acr login --name ${{ steps.infrastructure.outputs.registry_name }}
 
     - name: Build and push backend image
       uses: docker/build-push-action@v5
@@ -85,8 +89,8 @@ jobs:
         file: ./Dockerfile.backend
         push: true
         tags: |
-          ${{ steps.deploy.outputs.login_server }}/${{ env.BACKEND_IMAGE_NAME }}:latest
-          ${{ steps.deploy.outputs.login_server }}/${{ env.BACKEND_IMAGE_NAME }}:${{ github.sha }}
+          ${{ steps.infrastructure.outputs.login_server }}/${{ env.BACKEND_IMAGE_NAME }}:latest
+          ${{ steps.infrastructure.outputs.login_server }}/${{ env.BACKEND_IMAGE_NAME }}:${{ github.sha }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
@@ -97,38 +101,49 @@ jobs:
         file: ./Dockerfile.frontend
         push: true
         tags: |
-          ${{ steps.deploy.outputs.login_server }}/${{ env.FRONTEND_IMAGE_NAME }}:latest
-          ${{ steps.deploy.outputs.login_server }}/${{ env.FRONTEND_IMAGE_NAME }}:${{ github.sha }}
+          ${{ steps.infrastructure.outputs.login_server }}/${{ env.FRONTEND_IMAGE_NAME }}:latest
+          ${{ steps.infrastructure.outputs.login_server }}/${{ env.FRONTEND_IMAGE_NAME }}:${{ github.sha }}
         cache-from: type=gha
         cache-to: type=gha,mode=max
 
-    - name: Update container apps with new images
+    - name: Deploy container apps (Phase 2)
+      id: apps
       run: |
-        # Update backend container app
-        az containerapp update \
-          --name scrapemaster-backend-${{ github.event.inputs.environment || 'prod' }} \
-          --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-          --image ${{ steps.deploy.outputs.login_server }}/${{ env.BACKEND_IMAGE_NAME }}:${{ github.sha }}
+        APPS_DEPLOYMENT_NAME="scrapemaster-apps-$(date +%Y%m%d-%H%M%S)"
 
-        # Update frontend container app
-        az containerapp update \
-          --name scrapemaster-frontend-${{ github.event.inputs.environment || 'prod' }} \
+        echo "Deploying container apps with built images..."
+        az deployment group create \
           --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-          --image ${{ steps.deploy.outputs.login_server }}/${{ env.FRONTEND_IMAGE_NAME }}:${{ github.sha }}
+          --template-file azure-container-apps-only.bicep \
+          --name "$APPS_DEPLOYMENT_NAME" \
+          --parameters \
+            namePrefix=scrapemaster \
+            environment=${{ github.event.inputs.environment || 'prod' }} \
+            containerRegistryLoginServer="${{ steps.infrastructure.outputs.login_server }}" \
+            containerRegistryName="${{ steps.infrastructure.outputs.registry_name }}" \
+            containerAppEnvironmentId="${{ steps.infrastructure.outputs.container_app_env_id }}" \
+            backendImageTag="${{ github.sha }}" \
+            frontendImageTag="${{ github.sha }}" \
+            supabaseUrl="${{ secrets.SUPABASE_URL }}" \
+            supabaseKey="${{ secrets.SUPABASE_KEY }}" \
+            azureOpenAIApiKey="${{ secrets.AZURE_OPENAI_API_KEY }}" \
+            azureOpenAIEndpoint="${{ secrets.AZURE_OPENAI_ENDPOINT }}"
+
+        echo "apps_deployment_name=$APPS_DEPLOYMENT_NAME" >> $GITHUB_OUTPUT
 
     - name: Get deployment URLs
       id: urls
       run: |
-        # Get URLs from deployment outputs
+        # Get URLs from container apps deployment outputs
         BACKEND_URL=$(az deployment group show \
           --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-          --name ${{ steps.deploy.outputs.deployment_name }} \
+          --name ${{ steps.apps.outputs.apps_deployment_name }} \
           --query "properties.outputs.backendUrl.value" \
           --output tsv)
 
         FRONTEND_URL=$(az deployment group show \
           --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
-          --name ${{ steps.deploy.outputs.deployment_name }} \
+          --name ${{ steps.apps.outputs.apps_deployment_name }} \
           --query "properties.outputs.frontendUrl.value" \
           --output tsv)
 
