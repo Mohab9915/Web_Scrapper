@@ -54,9 +54,21 @@ def save_pagination_data(unique_name: str, pagination_data):
         except json.JSONDecodeError:
             pagination_data = {"raw_text": pagination_data}
 
-    supabase.table("scraped_data").update({
-        "pagination_data": pagination_data
-    }).eq("unique_name", unique_name).execute()
+    # Update the scrape_sessions table instead of non-existent scraped_data table
+    # Find the session by unique_scrape_identifier and update pagination_data
+    try:
+        supabase.table("scrape_sessions").update({
+            "pagination_data": json.dumps(pagination_data) if pagination_data else None
+        }).eq("unique_scrape_identifier", unique_name).execute()
+    except Exception as e:
+        print(f"Warning: Could not save pagination data for {unique_name}: {e}")
+        # Fallback: try to find by id if unique_scrape_identifier doesn't work
+        try:
+            supabase.table("scrape_sessions").update({
+                "pagination_data": json.dumps(pagination_data) if pagination_data else None
+            }).eq("id", unique_name).execute()
+        except Exception as e2:
+            print(f"Error: Could not save pagination data for {unique_name}: {e2}")
     MAGENTA = "\033[35m"
     RESET = "\033[0m" 
     print(f"{MAGENTA}INFO:Pagination data saved for {unique_name}{RESET}")

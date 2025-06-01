@@ -34,6 +34,10 @@ class ProjectUrlBase(BaseModel):
     display_format: DisplayFormat = DisplayFormat.TABLE
     rag_enabled: bool = False
 
+class ProjectUrlCreateRequest(ProjectUrlBase):
+    """Model for creating a new project URL via API (without project_id)."""
+    pass
+
 class ProjectUrlCreate(ProjectUrlBase):
     """Model for creating a new project URL."""
     project_id: UUID

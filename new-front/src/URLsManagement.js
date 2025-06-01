@@ -13,7 +13,9 @@ function URLManagementPanel({
   errorMessage,
   onOpenSettings,
   projectName,
-  onUpdateDisplayFormat, // Added new prop
+  onUpdateDisplayFormat,
+  onEnableRag, // Added new prop for RAG functionality
+  projectRagStatus, // Added to check if RAG is already enabled for the project
 }) {
   const [newUrl, setNewUrl] = useState('');
   const [newCondition, setNewCondition] = useState('');
@@ -232,6 +234,7 @@ function URLManagementPanel({
                 <option value="raw">Raw View</option>
               </select>
             </div>
+            {/* RAG functionality moved to post-scraping section */}
             <div className="flex space-x-3 pt-2">
               <button
                 onClick={handleAddClick}
@@ -472,7 +475,35 @@ function URLManagementPanel({
                           className="bg-purple-600 hover:bg-purple-500 text-white px-3 py-1 rounded-md text-sm">
                           Download PDF
                         </button>
+                        {/* RAG Enable Button - only show if session_id exists (scraping completed) */}
+                        {result.session_id && (
+                          projectRagStatus === 'enabled' ? (
+                            <div className="bg-green-600 text-white px-3 py-1 rounded-md text-sm flex items-center space-x-1">
+                              <span>🧠</span>
+                              <span>RAG Enabled</span>
+                            </div>
+                          ) : (
+                            <button
+                              onClick={() => {
+                                if (onEnableRag) {
+                                  onEnableRag(result.project_id, result.session_id);
+                                }
+                              }}
+                              className="bg-teal-600 hover:bg-teal-500 text-white px-3 py-1 rounded-md text-sm flex items-center space-x-1">
+                              <span>🧠</span>
+                              <span>Enable RAG</span>
+                            </button>
+                          )
+                        )}
                       </div>
+                      {/* RAG Management Info */}
+                      {result.session_id && (
+                        <div className="mt-2 p-2 bg-blue-900 bg-opacity-30 rounded-md border border-blue-700">
+                          <p className="text-blue-200 text-xs">
+                            💡 <strong>Tip:</strong> Use the <strong>RAG Management</strong> tab (🧠 icon in sidebar) to manually ingest data into RAG system, check status, and manage embeddings.
+                          </p>
+                        </div>
+                      )}
                     </div>
                   </div>
                 );
@@ -490,7 +521,7 @@ function URLManagementPanel({
                   <div className="flex-1 min-w-0">
                      <div className="font-medium text-purple-200 truncate" title={url.url}>{url.url}</div>
                      <div className="text-sm text-purple-300 truncate" title={url.conditions}>Conditions: {url.conditions}</div>
-                    <div className="mt-1">
+                    <div className="mt-1 flex items-center space-x-2">
                       <span className={`text-xs px-2 py-1 rounded-full ${
                         url.status === 'pending' ? 'bg-yellow-800 text-yellow-200' :
                         url.status === 'completed' ? 'bg-green-800 text-green-200' :
@@ -498,6 +529,11 @@ function URLManagementPanel({
                       }`}>
                         {url.status}
                       </span>
+                      {url.rag_enabled && (
+                        <span className="text-xs px-2 py-1 rounded-full bg-teal-800 text-teal-200 flex items-center">
+                          🧠 RAG
+                        </span>
+                      )}
                     </div>
                   </div>
                   <div className="flex items-center ml-4">

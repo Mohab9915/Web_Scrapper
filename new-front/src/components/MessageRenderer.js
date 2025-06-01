@@ -1,33 +1,72 @@
-import React from 'react';
+import React, { memo, useMemo } from 'react';
 import { Copy, ExternalLink, ShoppingCart, DollarSign, Star, Package } from 'lucide-react';
+import StableChartRenderer from './StableChartRenderer';
 
-const MessageRenderer = ({ content, onCopy }) => {
+const MessageRenderer = memo(({ content, onCopy }) => {
   // Check if content contains structured data patterns
-  const isStructuredResponse = content.includes('|') || 
-                              content.includes('```') || 
+  const isStructuredResponse = content.includes('|') ||
+                              content.includes('```') ||
                               content.includes('**') ||
                               content.includes('###') ||
                               content.includes('---');
 
-  // Parse and render different content types
-  const renderContent = () => {
-    // Handle code blocks (tables, JSON, etc.)
-    if (content.includes('```')) {
-      return renderCodeBlocks(content);
+  // Define helper functions first to avoid hoisting issues
+  const extractChartData = (text) => {
+    try {
+      // Look for JSON code blocks that contain chart data
+      const jsonMatch = text.match(/```json\s*(\{[\s\S]*?\})\s*```/);
+      if (jsonMatch) {
+        const jsonStr = jsonMatch[1];
+        const data = JSON.parse(jsonStr);
+
+        // Check if it's chart data
+        if (data.chart_type && data.title && data.data) {
+          return data;
+        }
+      }
+      return null;
+    } catch (error) {
+      console.error('Error parsing chart data:', error);
+      return null;
     }
-    
-    // Handle markdown tables
-    if (content.includes('|') && content.includes('---')) {
-      return renderMarkdownTable(content);
+  };
+
+  const renderEnhancedText = (text) => {
+    // Split by paragraphs and render with better formatting
+    const paragraphs = text.split('\n\n');
+    return paragraphs.map((paragraph, index) => (
+      <p key={index} className="mb-3 text-purple-100 leading-relaxed">
+        {paragraph}
+      </p>
+    ));
+  };
+
+  const renderChartWithText = (text, chartData) => {
+    // Split content to show text before/after chart
+    const jsonMatch = text.match(/```json\s*\{[\s\S]*?\}\s*```/);
+    if (jsonMatch) {
+      const beforeChart = text.substring(0, jsonMatch.index).trim();
+      const afterChart = text.substring(jsonMatch.index + jsonMatch[0].length).trim();
+
+      return (
+        <div>
+          {beforeChart && (
+            <div className="mb-4">
+              {renderEnhancedText(beforeChart)}
+            </div>
+          )}
+          <StableChartRenderer chartData={chartData} className="my-4" />
+          {afterChart && (
+            <div className="mt-4">
+              {renderEnhancedText(afterChart)}
+            </div>
+          )}
+        </div>
+      );
     }
-    
-    // Handle structured cards
-    if (content.includes('**') || content.includes('###')) {
-      return renderStructuredContent(content);
-    }
-    
-    // Default text rendering with enhanced formatting
-    return renderEnhancedText(content);
+
+    // Fallback: just render the chart
+    return <StableChartRenderer chartData={chartData} className="my-4" />;
   };
 
   const renderCodeBlocks = (text) => {
@@ -276,20 +315,39 @@ const MessageRenderer = ({ content, onCopy }) => {
     </ul>
   );
 
-  const renderEnhancedText = (text) => {
-    // Split by paragraphs and render with better formatting
-    const paragraphs = text.split('\n\n');
-    return paragraphs.map((paragraph, index) => (
-      <p key={index} className="mb-3 text-purple-100 leading-relaxed">
-        {paragraph}
-      </p>
-    ));
-  };
+  // Memoize chart data extraction to prevent unnecessary re-computation
+  const chartData = useMemo(() => extractChartData(content), [content]);
+
+  // Parse and render different content types
+  const renderContent = useMemo(() => {
+    // Handle chart data first (highest priority)
+    if (chartData) {
+      return renderChartWithText(content, chartData);
+    }
+
+    // Handle code blocks (tables, JSON, etc.)
+    if (content.includes('```')) {
+      return renderCodeBlocks(content);
+    }
+
+    // Handle markdown tables
+    if (content.includes('|') && content.includes('---')) {
+      return renderMarkdownTable(content);
+    }
+
+    // Handle structured cards
+    if (content.includes('**') || content.includes('###')) {
+      return renderStructuredContent(content);
+    }
+
+    // Default text rendering with enhanced formatting
+    return renderEnhancedText(content);
+  }, [content, chartData]);
 
   return (
     <div className="relative">
-      {renderContent()}
-      
+      {renderContent}
+
       {/* Copy button */}
       <button
         onClick={() => onCopy && onCopy(content)}
@@ -300,6 +358,6 @@ const MessageRenderer = ({ content, onCopy }) => {
       </button>
     </div>
   );
-};
+});
 
 export default MessageRenderer;

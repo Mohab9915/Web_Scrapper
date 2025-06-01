@@ -5,7 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List
 from uuid import UUID
 
-from ..models.project_url import ProjectUrlResponse, ProjectUrlCreate, ProjectUrlUpdate
+from ..models.project_url import ProjectUrlResponse, ProjectUrlCreate, ProjectUrlCreateRequest, ProjectUrlUpdate
 from ..services.project_url_service import ProjectUrlService
 
 router = APIRouter(tags=["project_urls"])
@@ -26,7 +26,7 @@ async def get_project_urls(project_id: UUID, project_url_service: ProjectUrlServ
 @router.post("/projects/{project_id}/urls", response_model=ProjectUrlResponse, status_code=status.HTTP_201_CREATED)
 async def create_project_url(
     project_id: UUID,
-    project_url: ProjectUrlCreate,
+    project_url_request: ProjectUrlCreateRequest,
     project_url_service: ProjectUrlService = Depends()
 ):
     """
@@ -34,13 +34,19 @@ async def create_project_url(
 
     Args:
         project_id (UUID): Project ID
-        project_url (ProjectUrlCreate): Project URL data
+        project_url_request (ProjectUrlCreateRequest): Project URL data
 
     Returns:
         ProjectUrlResponse: Created project URL
     """
-    # Override the project_id from the path
-    project_url.project_id = project_id
+    # Create the full ProjectUrlCreate object with project_id from path
+    project_url = ProjectUrlCreate(
+        project_id=project_id,
+        url=project_url_request.url,
+        conditions=project_url_request.conditions,
+        display_format=project_url_request.display_format,
+        rag_enabled=project_url_request.rag_enabled
+    )
     return await project_url_service.create_project_url(project_url)
 
 @router.delete("/projects/{project_id}/urls", status_code=status.HTTP_204_NO_CONTENT)

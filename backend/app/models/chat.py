@@ -43,3 +43,6 @@ class RAGQueryResponse(BaseModel):
     answer: str
     generation_cost: float
     source_documents: Optional[List[Dict[str, Any]]] = None
+    sources: Optional[List[Dict[str, Any]]] = None  # Alias for source_documents for compatibility
+    chart_data: Optional[Dict[str, Any]] = None  # Chart configuration and data
+    conversation_title: Optional[str] = None  # AI-generated conversation title

@@ -152,10 +152,22 @@ class RAGService:
                                 }
                             })
 
+                    # Check if this is a chart request and generate chart data
+                    chart_data = None
+                    if self._is_chart_request(query) and context:
+                        try:
+                            chart_data = await self.generate_chart_data(query, context, azure_credentials)
+                            if chart_data and "error" not in chart_data:
+                                # Update the answer to indicate chart generation
+                                answer = "I'll create a chart for you based on the available data."
+                        except Exception as e:
+                            print(f"Error generating chart data in fallback: {e}")
+
                     return RAGQueryResponse(
                         answer=answer,
                         generation_cost=generation_cost,
-                        source_documents=source_documents
+                        source_documents=source_documents,
+                        chart_data=chart_data
                     )
                 except Exception as e:
                     print(f"Error in fallback response generation: {e}")
@@ -223,6 +235,12 @@ When users ask for specific data (products, lists, tables, etc.):
 3. If no relevant data is found in context, say so clearly
 4. Always base answers on the provided context when discussing data
 
+CHART REQUESTS:
+If users ask for charts, graphs, or visualizations (keywords: "chart", "graph", "plot", "visualize", "show me a chart"):
+- Respond with: "I'll create a chart for you based on the available data."
+- The system will automatically generate the appropriate visualization
+- Don't try to create ASCII charts or describe charts in text
+
 CONTEXT USAGE:
 - If context is provided, use it to answer data-related questions
 - If no context or context isn't relevant, have a normal conversation
@@ -289,10 +307,23 @@ CONTEXT USAGE:
                     }
                 })
 
+        # Check if this is a chart request and generate chart data
+        chart_data = None
+        if self._is_chart_request(query) and context:
+            try:
+                chart_data = await self.generate_chart_data(query, context, azure_credentials)
+                if chart_data and "error" not in chart_data:
+                    # Update the answer to indicate chart generation
+                    answer = "I'll create a chart for you based on the available data."
+            except Exception as e:
+                print(f"Error generating chart data: {e}")
+
         return RAGQueryResponse(
             answer=answer,
             generation_cost=generation_cost,
-            source_documents=source_documents
+            source_documents=source_documents,
+            sources=source_documents,  # Add sources field for compatibility
+            chart_data=chart_data
         )
 
     async def post_chat_message(
@@ -458,13 +489,15 @@ CONTEXT USAGE:
                     return RAGQueryResponse(
                         answer=answer,
                         generation_cost=0.001,
-                        source_documents=[]
+                        source_documents=[],
+                        sources=[]
                     )
                 except Exception as e:
                     return RAGQueryResponse(
                         answer="Hello! I'm here to help you with information from your scraped data. Feel free to ask me questions about the content that has been processed.",
                         generation_cost=0.0,
-                        source_documents=[]
+                        source_documents=[],
+                        sources=[]
                     )
 
             # Build context from fallback chunks
@@ -490,7 +523,8 @@ CONTEXT USAGE:
             return RAGQueryResponse(
                 answer=answer,
                 generation_cost=0.005,  # Approximate cost for GPT-4o
-                source_documents=source_documents
+                source_documents=source_documents,
+                sources=source_documents
             )
 
         except Exception as e:
@@ -498,7 +532,8 @@ CONTEXT USAGE:
             return RAGQueryResponse(
                 answer=f"Sorry, I encountered an error while processing your query: {str(e)}",
                 generation_cost=0.0,
-                source_documents=[]
+                source_documents=[],
+                sources=[]
             )
 
     async def ingest_scraped_content(
@@ -1052,3 +1087,245 @@ CONTEXT USAGE:
         except Exception as e:
             print(f"Error generating OpenAI response: {e}")
             return f"Sorry, I encountered an error while generating a response: {str(e)}"
+
+    async def generate_conversation_title(self, messages: List[Dict[str, str]], azure_credentials: Dict[str, str]) -> str:
+        """
+        Generate a meaningful conversation title based on the chat messages.
+
+        Args:
+            messages (List[Dict[str, str]]): List of chat messages with 'role' and 'content'
+            azure_credentials (Dict[str, str]): Azure credentials
+
+        Returns:
+            str: Generated conversation title
+        """
+        try:
+            import httpx
+
+            # Get Azure OpenAI credentials
+            api_key = azure_credentials['api_key']
+            endpoint = azure_credentials['endpoint']
+
+            # Always use the correct chat model
+            deployment_name = AZURE_CHAT_MODEL
+
+            # Determine the correct API endpoint format
+            if "services.ai.azure.com" in endpoint:
+                base_endpoint = endpoint.replace("/models", "")
+                url = f"{base_endpoint}/openai/deployments/{deployment_name}/chat/completions?api-version=2023-05-15"
+            else:
+                url = f"{endpoint}/openai/deployments/{deployment_name}/chat/completions?api-version=2023-05-15"
+
+            # Create conversation summary for title generation
+            conversation_text = ""
+            for msg in messages[-6:]:  # Use last 6 messages for context
+                role = "User" if msg['role'] == 'user' else "Assistant"
+                conversation_text += f"{role}: {msg['content'][:200]}...\n"
+
+            system_message = """You are an AI that generates concise, descriptive conversation titles based on chat content.
+
+RULES:
+1. Create titles that are 2-6 words long
+2. Focus on the main topic or data being discussed
+3. Use descriptive, professional language
+4. If discussing products, mention "Product Analysis" or "Product Data"
+5. If discussing charts/visualizations, mention "Data Visualization"
+6. If general conversation, use "General Discussion"
+7. Avoid generic titles like "Chat" or "Conversation"
+8. Make titles specific to the actual content discussed
+
+EXAMPLES:
+- "Product Price Analysis"
+- "E-commerce Data Query"
+- "Sales Chart Generation"
+- "Inventory Data Review"
+- "Product Category Breakdown"
+- "Data Visualization Request"
+
+Generate ONLY the title, nothing else."""
+
+            messages_for_api = [
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": f"Generate a conversation title for this chat:\n\n{conversation_text}"}
+            ]
+
+            payload = {
+                "messages": messages_for_api,
+                "temperature": 0.3,  # Lower temperature for consistent titles
+                "top_p": 0.8,
+                "max_tokens": 20  # Short titles only
+            }
+
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    url,
+                    json=payload,
+                    headers={
+                        "Content-Type": "application/json",
+                        "api-key": api_key
+                    }
+                )
+
+                if response.status_code != 200:
+                    print(f"Error generating conversation title: {response.text}")
+                    return "General Discussion"
+
+                response_data = response.json()
+                title = response_data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+
+                # Clean up the title
+                title = title.replace('"', '').replace("'", "").strip()
+                if not title or len(title) > 50:
+                    return "General Discussion"
+
+                return title
+
+        except Exception as e:
+            print(f"Error generating conversation title: {e}")
+            return "General Discussion"
+
+    async def generate_chart_data(self, query: str, context: str, azure_credentials: Dict[str, str]) -> Dict[str, Any]:
+        """
+        Generate chart data and configuration based on the query and context.
+
+        Args:
+            query (str): User query requesting a chart
+            context (str): Data context from RAG
+            azure_credentials (Dict[str, str]): Azure credentials
+
+        Returns:
+            Dict[str, Any]: Chart configuration and data
+        """
+        try:
+            import httpx
+            import json
+
+            # Get Azure OpenAI credentials
+            api_key = azure_credentials['api_key']
+            endpoint = azure_credentials['endpoint']
+
+            # Always use the correct chat model
+            deployment_name = AZURE_CHAT_MODEL
+
+            # Determine the correct API endpoint format
+            if "services.ai.azure.com" in endpoint:
+                base_endpoint = endpoint.replace("/models", "")
+                url = f"{base_endpoint}/openai/deployments/{deployment_name}/chat/completions?api-version=2023-05-15"
+            else:
+                url = f"{endpoint}/openai/deployments/{deployment_name}/chat/completions?api-version=2023-05-15"
+
+            system_message = """You are an AI that generates chart configurations for data visualization.
+
+TASK: Analyze the provided data context and user query to create appropriate chart configurations.
+
+SUPPORTED CHART TYPES:
+1. "bar" - For comparing categories or items
+2. "pie" - For showing proportions/percentages
+3. "line" - For trends over time
+4. "table" - For detailed data display
+5. "stats" - For statistical summaries
+
+OUTPUT FORMAT: Return ONLY a valid JSON object with this structure:
+{
+  "chart_type": "bar|pie|line|table|stats",
+  "title": "Chart Title",
+  "data": {
+    "labels": ["Label1", "Label2", ...],
+    "values": [value1, value2, ...],
+    "datasets": [{"label": "Dataset Name", "data": [1,2,3], "backgroundColor": ["#color1", "#color2"]}]
+  },
+  "description": "Brief description of what the chart shows"
+}
+
+RULES:
+1. Extract actual data from the context
+2. Choose appropriate chart type based on data and query
+3. Use meaningful labels and titles
+4. For pie charts, ensure values are numeric and sum to a meaningful total
+5. For bar charts, use clear category labels
+6. For tables, structure data in rows and columns
+7. If no suitable data found, return {"error": "No suitable data for visualization"}
+
+EXAMPLES:
+- "show product prices" → bar chart with products and prices
+- "pie chart of categories" → pie chart showing category distribution
+- "price statistics" → stats summary with min/max/average
+- "product table" → table with product details"""
+
+            messages_for_api = [
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": f"USER QUERY: {query}\n\nDATA CONTEXT:\n{context}\n\nGenerate chart configuration:"}
+            ]
+
+            payload = {
+                "messages": messages_for_api,
+                "temperature": 0.1,  # Low temperature for consistent JSON
+                "top_p": 0.8,
+                "max_tokens": 1000
+            }
+
+            async with httpx.AsyncClient() as client:
+                response = await client.post(
+                    url,
+                    json=payload,
+                    headers={
+                        "Content-Type": "application/json",
+                        "api-key": api_key
+                    }
+                )
+
+                if response.status_code != 200:
+                    print(f"Error generating chart data: {response.text}")
+                    return {"error": "Failed to generate chart"}
+
+                response_data = response.json()
+                chart_response = response_data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
+
+                # Try to parse the JSON response
+                try:
+                    # Clean up the response (remove markdown code blocks if present)
+                    if "```json" in chart_response:
+                        chart_response = chart_response.split("```json")[1].split("```")[0].strip()
+                    elif "```" in chart_response:
+                        chart_response = chart_response.split("```")[1].strip()
+
+                    chart_config = json.loads(chart_response)
+
+                    # Validate the chart configuration
+                    if "error" in chart_config:
+                        return chart_config
+
+                    required_fields = ["chart_type", "title", "data"]
+                    if not all(field in chart_config for field in required_fields):
+                        return {"error": "Invalid chart configuration generated"}
+
+                    return chart_config
+
+                except json.JSONDecodeError as e:
+                    print(f"Error parsing chart JSON: {e}")
+                    print(f"Raw response: {chart_response}")
+                    return {"error": "Failed to parse chart configuration"}
+
+        except Exception as e:
+            print(f"Error generating chart data: {e}")
+            return {"error": f"Chart generation failed: {str(e)}"}
+
+    def _is_chart_request(self, query: str) -> bool:
+        """
+        Check if the user is requesting a chart or visualization.
+
+        Args:
+            query (str): User query
+
+        Returns:
+            bool: True if it's a chart request
+        """
+        query_lower = query.lower()
+        chart_keywords = [
+            'chart', 'graph', 'plot', 'visualize', 'visualization', 'show me a chart',
+            'create a chart', 'bar chart', 'pie chart', 'line chart', 'line graph',
+            'bar graph', 'pie graph', 'statistics chart', 'data visualization',
+            'show chart', 'generate chart', 'make a chart', 'draw a chart'
+        ]
+
+        return any(keyword in query_lower for keyword in chart_keywords)

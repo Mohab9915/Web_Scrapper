@@ -3,7 +3,7 @@
 import json
 from typing import List
 from pydantic import BaseModel, create_model
-from .assets import (OPENAI_MODEL_FULLNAME,GEMINI_MODEL_FULLNAME,SYSTEM_MESSAGE)
+from .assets import (OPENAI_MODEL_FULLNAME,GEMINI_MODEL_FULLNAME,SYSTEM_MESSAGE,generate_user_focused_system_message)
 from .llm_calls import (call_llm_model)
 from .markdown import read_raw_data
 # from .api_management import get_supabase_client # No longer needed for supabase client here
@@ -19,8 +19,8 @@ def create_dynamic_listing_model(field_names: List[str]):
 def create_listings_container_model(listing_model: BaseModel):
     return create_model('DynamicListingsContainer', listings=(List[listing_model], ...))
 
-def generate_system_message(listing_model: BaseModel) -> str:
-    # same logic as your code
+def generate_system_message(listing_model: BaseModel, fields: List[str] = None) -> str:
+    # Get schema info
     schema_info = listing_model.model_json_schema()
     field_descriptions = []
     for field_name, field_info in schema_info["properties"].items():
@@ -29,7 +29,13 @@ def generate_system_message(listing_model: BaseModel) -> str:
 
     schema_structure = ",\n".join(field_descriptions)
 
-    final_prompt= SYSTEM_MESSAGE+"\n"+f"""strictly follows this schema:
+    # Use user-focused system message if fields are provided
+    if fields:
+        base_message = generate_user_focused_system_message(fields)
+    else:
+        base_message = SYSTEM_MESSAGE
+
+    final_prompt = base_message + "\n" + f"""strictly follows this schema:
     {{
        "listings": [
          {{
@@ -53,14 +59,17 @@ def save_formatted_data(unique_name: str, formatted_data):
     else:
         data_json = formatted_data
 
-    # Upsert the data: insert if unique_name doesn't exist, update if it does.
-    # Assumes 'unique_name' is the primary key or a unique column in 'scraped_data'.
-    supabase.table("scraped_data").upsert({
-        "unique_name": unique_name,
-        "formatted_data": data_json
-        # If other columns like 'url' are relevant for scraped_data, they should be included here.
-        # For now, assuming only unique_name and formatted_data are essential.
-    }, on_conflict="unique_name").execute()
+    # Update the scrape session with formatted data
+    # The unique_name is a timestamp-based name, not project_id_session_id format
+    # We need to find the session by unique_scrape_identifier
+    try:
+        # Use unique_scrape_identifier to find and update the session
+        supabase.table("scrape_sessions").update({
+            "formatted_tabular_data": data_json
+        }).eq("unique_scrape_identifier", unique_name).execute()
+    except Exception as e:
+        print(f"Warning: Could not update scrape session with formatted data: {e}")
+        # Continue without failing the scraping process
     MAGENTA = "\033[35m"
     RESET = "\033[0m"  # Reset color to default
     print(f"{MAGENTA}INFO:Scraped data saved for {unique_name}{RESET}")
@@ -91,7 +100,8 @@ def scrape_urls(unique_names: List[str], fields: List[str], selected_model: str)
             continue
 
         # Generate the specific system message that includes the schema for DynamicListingModel within the "listings" structure
-        specific_system_message = generate_system_message(DynamicListingModel)
+        # Pass the fields to prioritize user-specified conditions
+        specific_system_message = generate_system_message(DynamicListingModel, fields)
         parsed, token_counts, cost = call_llm_model(raw_data, DynamicListingsContainer, selected_model, specific_system_message)
 
         current_result_entry = {

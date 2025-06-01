@@ -149,7 +149,7 @@ function ChatPanel({
             <>
               {chatMessages.filter(message => !message.isLoading).map((message, index) => (
                 <div
-                  key={message.id}
+                  key={`${message.id}-${message.timestamp || index}`}
                   className={`mb-6 flex items-start gap-3 animate-fadeIn ${message.role === 'user' ? 'flex-row-reverse' : ''}`}
                   style={{ animationDelay: `${index * 0.1}s` }}
                 >

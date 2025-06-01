@@ -75,10 +75,14 @@ class ExecuteScrapeResponse(BaseModel):
     """Model for executing scraping response."""
     status: str
     message: str
+    session_id: Optional[str] = None  # Add session_id field that was missing
     download_links: Optional[Dict[str, str]] = None
     rag_status: Optional[str] = None
     embedding_cost_if_any: Optional[float] = None
     tabular_data: Optional[List[Dict[str, Any]]] = None  # Structured data in tabular format
+    tabularData: Optional[List[Dict[str, Any]]] = None  # camelCase version for frontend compatibility
     fields: Optional[List[str]] = None  # List of fields extracted
     display_format: Optional[str] = "table"  # Display format used: 'table', 'paragraph', or 'raw'
+    displayFormat: Optional[str] = "table"  # camelCase version for frontend compatibility
     formatted_data: Optional[Dict[str, Any]] = None  # Data formatted according to display_format
+    formattedData: Optional[Dict[str, Any]] = None  # camelCase version for frontend compatibility

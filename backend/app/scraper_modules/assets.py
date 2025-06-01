@@ -5,7 +5,7 @@ that are used across different parts of the application.
 
 
 GEMINI_MODEL_FULLNAME="gemini/gemini-1.5-flash"
-OPENAI_MODEL_FULLNAME="gpt-4o-mini"
+OPENAI_MODEL_FULLNAME="gpt-4o"
 DEEPSEEK_MODEL_FULLNAME ="groq/deepseek-r1-distill-llama-70b"
 MODELS_USED = {
     OPENAI_MODEL_FULLNAME: {"OPENAI_API_KEY"},
@@ -15,7 +15,7 @@ MODELS_USED = {
 
 # Azure OpenAI model configuration (consistent with old crawler for RAG)
 AZURE_EMBEDDING_MODEL = "text-embedding-ada-002"
-AZURE_CHAT_MODEL = "gpt-4o-mini" # Ensure this is available for text_processing
+AZURE_CHAT_MODEL = "gpt-4o" # Ensure this is available for text_processing
 
 # Timeout settings for web scraping
 TIMEOUT_SETTINGS = {
@@ -28,11 +28,35 @@ NUMBER_SCROLL=2
 
 
 
-SYSTEM_MESSAGE = """You are an intelligent text extraction and conversion assistant. Your task is to extract structured information 
-                        from the given text and convert it into a pure JSON format. The JSON should contain only the structured data extracted from the text, 
-                        with no additional commentary, explanations, or extraneous information. 
+SYSTEM_MESSAGE = """You are an intelligent text extraction and conversion assistant. Your task is to extract structured information
+                        from the given text and convert it into a pure JSON format. The JSON should contain only the structured data extracted from the text,
+                        with no additional commentary, explanations, or extraneous information.
                         You could encounter cases where you can't find the data of the fields you have to extract or the data will be in a foreign language.
                         Please process the following text and provide the output in pure JSON format with no words before or after the JSON:"""
+
+def generate_user_focused_system_message(fields: list) -> str:
+    """Generate a system message that prioritizes user-specified fields"""
+    fields_str = ", ".join(fields)
+
+    return f"""You are an intelligent text extraction and conversion assistant. Your PRIMARY task is to extract ONLY the specific fields requested by the user.
+
+USER REQUESTED FIELDS: {fields_str}
+
+CRITICAL INSTRUCTIONS:
+1. ONLY extract data for these exact fields: {fields_str}
+2. Do NOT add any additional fields that you think might be useful
+3. Do NOT rename fields - use the exact field names provided by the user
+4. If a requested field cannot be found, include it with an empty string value
+5. Focus on finding data that matches the user's field names, even if the website uses different terminology
+
+For example:
+- If user requests "name" and the website shows "country", map "country" data to the "name" field
+- If user requests "price" and the website shows "cost", map "cost" data to the "price" field
+- If user requests "area" and the website shows "size" or "area (km2)", map that data to the "area" field
+
+Your output must be a pure JSON format with no additional commentary, explanations, or extraneous information.
+You could encounter cases where you can't find the data of the fields you have to extract or the data will be in a foreign language.
+Please process the following text and provide the output in pure JSON format with no words before or after the JSON:"""
 
 USER_MESSAGE = f"Extract the following information from the provided text:\nPage content:\n\n"
         

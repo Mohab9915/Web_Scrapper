@@ -64,6 +64,23 @@ def call_llm_model(data,response_format,model,system_message,extra_user_instruct
     if max_tokens is not None:
         params["max_tokens"] = max_tokens
 
+    # Check if we have Azure OpenAI configuration
+    azure_api_base = os.environ.get("AZURE_AI_API_BASE") or os.environ.get("AZURE_OPENAI_API_BASE")
+    azure_api_key = os.environ.get("AZURE_AI_API_KEY") or os.environ.get("AZURE_OPENAI_API_KEY")
+    azure_api_version = os.environ.get("AZURE_OPENAI_API_VERSION", "2024-05-01-preview")
+
+    if azure_api_base and azure_api_key and model in ["gpt-35-turbo", "gpt-4o", "gpt-4o-mini", "gpt-3.5-turbo"]:
+        # Use Azure OpenAI format for LiteLLM
+        params["model"] = f"azure/{model}"
+        params["api_base"] = azure_api_base
+        params["api_key"] = azure_api_key
+        params["api_version"] = azure_api_version
+    else:
+        # Fallback to standard OpenAI API key if available
+        openai_api_key = os.environ.get("OPENAI_API_KEY")
+        if openai_api_key:
+            params["api_key"] = openai_api_key
+
     # Call the LLM using LiteLLM
     response = completion(**params)
 

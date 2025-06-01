@@ -1,6 +1,6 @@
 import { useState, useEffect, useCallback } from 'react';
 import { MessageCircle, Globe, Settings, AlertCircle, ChevronDown,
-         Database, Clock, Folder, Home } from 'lucide-react';
+         Database, Clock, Folder, Home, Brain } from 'lucide-react';
 import URLManagement from './URLsManagement';
 import ChatPanel from './ChatPanel';
 import HistoryPanel from './History';
@@ -8,6 +8,7 @@ import SettingsModal from './SettingsModal';
 import ProjectsPanel from './ProjectsPanel';
 import RagPromptModal from './RagPromptModal';
 import ConfirmationModal from './ConfirmationModal';
+import RagManagement from './components/RagManagement';
 import { executeScrape, sendChatMessage, getProjectConversations, createConversation, deleteConversation, getConversationMessages, queryEnhancedRagApi } from './lib/api';
 import { useToast } from './components/Toast';
 
@@ -403,15 +404,25 @@ function WebScrapingDashboard() {
         const formatted_data = latestScrapeData.formatted_tabular_data || null; // This is for paragraph/raw views
 
         // Create formatted results (simplified single-row summary for potential fallback display)
-        const formattedResults = fields
-          .filter(field => {
-            // Check if the field exists in the first row of tabular data
-            return tabularData.length > 0 && tabularData[0] && typeof tabularData[0] === 'object' && tabularData[0][field];
-          })
-          .map(field => ({
+        // Include ALL selected fields, even if they don't have values in the first row
+        const formattedResults = fields.map(field => {
+          let value = '';
+
+          // Try to get value from the first row of tabular data
+          if (tabularData.length > 0 && tabularData[0] && typeof tabularData[0] === 'object') {
+            value = tabularData[0][field] || '';
+          }
+
+          // If no value found in tabular data, try to get from structured data
+          if (!value && structuredData && typeof structuredData === 'object') {
+            value = structuredData[field] || '';
+          }
+
+          return {
             title: field,
-            value: tabularData.length > 0 && tabularData[0] && typeof tabularData[0] === 'object' ? tabularData[0][field] : ''
-          }));
+            value: value
+          };
+        });
 
         // Only add fallback metadata if no meaningful content was extracted and no tabularData exists
         // This prevents unwanted metadata tables when actual content is available
@@ -536,6 +547,48 @@ function WebScrapingDashboard() {
     updateProjectById(projectId, { name: newName.trim() });
   };
 
+
+  const handleEnableRag = async (projectId, sessionId) => {
+    try {
+      console.log(`Enabling RAG for project ${projectId} with session ${sessionId}`);
+
+      // Update project RAG status to enabled
+      const response = await fetch(`http://localhost:8000/api/v1/projects/${projectId}`, {
+        method: 'PUT',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          rag_enabled: true
+        }),
+      });
+
+      if (!response.ok) {
+        throw new Error('Failed to update RAG status');
+      }
+
+      // Call the enable-rag endpoint to process the data
+      const ragResponse = await fetch(`http://localhost:8000/api/v1/projects/${projectId}/enable-rag`, {
+        method: 'POST'
+      });
+
+      if (!ragResponse.ok) {
+        throw new Error('Failed to process RAG data');
+      }
+
+      // Update the project's RAG status in the UI
+      updateProjectById(projectId, { ragStatus: 'enabled' });
+
+      // Fetch sessions to update UI and show RAG status
+      fetchScrapingSessions(projectId);
+
+      alert('RAG has been successfully enabled for this project! You can now use the chat feature to query your scraped data.');
+
+    } catch (error) {
+      console.error('Error enabling RAG:', error);
+      alert(`Failed to enable RAG: ${error.message}`);
+    }
+  };
 
   const handleRagDecision = async (projectId, decision) => {
     // Update the local state
@@ -1335,6 +1388,8 @@ function WebScrapingDashboard() {
                 updateProjectById(activeProjectId, { scrapingResults: updatedScrapingResults });
               }
             }}
+            onEnableRag={handleEnableRag}
+            projectRagStatus={currentActiveProject.ragStatus}
           />
         ) : (<div className="p-6 text-center text-purple-300">Please select or create a project to manage URLs.</div>);
       case 'chat':
@@ -1362,6 +1417,21 @@ function WebScrapingDashboard() {
               onDeleteHistoryItem={handleDeleteHistoryItem}
             />
         ) : (<div className="p-6 text-center text-purple-300">Please select a project to view its history.</div>);
+      case 'rag':
+        return currentActiveProject ? (
+            <RagManagement
+              key={currentActiveProject.id + '-rag'}
+              projectId={currentActiveProject.id}
+              onStatusUpdate={(status) => {
+                // Update project RAG status when RAG status changes
+                if (status.rag_enabled !== undefined) {
+                  updateProjectById(currentActiveProject.id, {
+                    ragStatus: status.rag_enabled ? 'enabled' : 'disabled'
+                  });
+                }
+              }}
+            />
+        ) : (<div className="p-6 text-center text-purple-300">Please select a project to manage RAG.</div>);
       default:
         if (activeTab !== 'settings') {
             setActiveTab('projects');
@@ -1494,6 +1564,18 @@ function WebScrapingDashboard() {
              disabled={!activeProjectId}
           >
             <Clock size={20} className="text-white" />
+          </button>
+          <button
+            onClick={() => activeProjectId ? setActiveTab('rag') : alert("Please select or create a project first.")}
+            className={`p-3 rounded-xl mb-4 transition-all duration-200 ${
+              activeTab === 'rag' && activeProjectId
+                ? 'bg-gradient-to-r from-purple-600 to-indigo-600 shadow-lg'
+                : 'hover:bg-purple-700/50'
+            } ${!activeProjectId ? 'opacity-50 cursor-not-allowed' : ''}`}
+             title="RAG Management"
+             disabled={!activeProjectId}
+          >
+            <Brain size={20} className="text-white" />
           </button>
           <div className="flex-1"></div>
           <button className="p-3 rounded-xl hover:bg-purple-700/50 transition-all duration-200" title="Help/Info">
