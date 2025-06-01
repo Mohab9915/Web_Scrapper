@@ -9,6 +9,7 @@ numpy>=1.24.0
 httpx>=0.24.0
 python-multipart>=0.0.6
 crawl4ai  # Advanced web scraping framework (updated version)
+playwright>=1.40.0      # Browser automation for web scraping
 # Azure OpenAI specific packages
 azure-identity>=1.12.0  # For Azure authentication (if needed)
 azure-core>=1.26.0      # Core functionality for Azure SDK
