@@ -1,5 +1,6 @@
 import { useState } from 'react';
 import { Globe, PlusCircle, PlayCircle, XCircle, Database, AlertCircle, ChevronLeft, ChevronRight, ToggleLeft, ToggleRight } from 'lucide-react';
+import { API_URL } from './lib/api';
 
 function URLManagementPanel({
   urls,
@@ -469,7 +470,7 @@ function URLManagementPanel({
                         <button
                           onClick={() => {
                             // Download PDF (actually HTML that can be printed to PDF)
-                            const pdfUrl = `http://localhost:8000/download/${result.project_id}/${result.session_id}/pdf`;
+                            const pdfUrl = `${API_URL.replace('/api/v1', '')}/download/${result.project_id}/${result.session_id}/pdf`;
                             window.open(pdfUrl, '_blank');
                           }}
                           className="bg-purple-600 hover:bg-purple-500 text-white px-3 py-1 rounded-md text-sm">

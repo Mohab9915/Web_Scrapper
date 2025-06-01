@@ -9,7 +9,7 @@ import ProjectsPanel from './ProjectsPanel';
 import RagPromptModal from './RagPromptModal';
 import ConfirmationModal from './ConfirmationModal';
 import RagManagement from './components/RagManagement';
-import { executeScrape, sendChatMessage, getProjectConversations, createConversation, deleteConversation, getConversationMessages, queryEnhancedRagApi } from './lib/api';
+import { executeScrape, sendChatMessage, getProjectConversations, createConversation, deleteConversation, getConversationMessages, queryEnhancedRagApi, getProjects, createProject, deleteProject, getScrapedSessions, API_URL } from './lib/api';
 import { useToast } from './components/Toast';
 
 function WebScrapingDashboard() {
@@ -30,7 +30,7 @@ function WebScrapingDashboard() {
           const urlsController = new AbortController();
           const urlsTimeout = setTimeout(() => urlsController.abort(), 5000); // 5 second timeout
 
-          const urlsResponse = await fetch(`http://localhost:8000/api/v1/projects/${project.id}/urls`, {
+          const urlsResponse = await fetch(`${API_URL}/projects/${project.id}/urls/`, {
             signal: urlsController.signal
           });
           clearTimeout(urlsTimeout);
@@ -42,7 +42,7 @@ function WebScrapingDashboard() {
             const sessionsController = new AbortController();
             const sessionsTimeout = setTimeout(() => sessionsController.abort(), 5000); // 5 second timeout
 
-            const sessionsResponse = await fetch(`http://localhost:8000/api/v1/projects/${project.id}/sessions`, {
+            const sessionsResponse = await fetch(`${API_URL}/projects/${project.id}/sessions/`, {
               signal: sessionsController.signal
             });
             clearTimeout(sessionsTimeout);
@@ -94,15 +94,10 @@ function WebScrapingDashboard() {
 
   // Fetch projects from the backend when the component mounts (only once)
   useEffect(() => {
-    const fetchProjects = async () => {
+    const fetchProjectsData = async () => {
       try {
         setIsLoading(true);
-        const response = await fetch('http://localhost:8000/api/v1/projects');
-        if (!response.ok) {
-          throw new Error('Failed to fetch projects');
-        }
-
-        const data = await response.json();
+        const data = await getProjects();
         console.log('Fetched projects:', data);
 
         // Convert the backend projects to the format expected by the frontend
@@ -135,7 +130,7 @@ function WebScrapingDashboard() {
       }
     };
 
-    fetchProjects();
+    fetchProjectsData();
   }, []); // Empty dependency array - only run once on mount
 
   // Chat history management functions - defined early to avoid hoisting issues
@@ -251,22 +246,7 @@ function WebScrapingDashboard() {
   const handleAddProject = async (projectName) => {
     try {
       // Call the backend API to create a new project
-      const response = await fetch('http://localhost:8000/api/v1/projects', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-        body: JSON.stringify({
-          name: projectName,
-          initial_urls: []
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to create project');
-      }
-
-      const data = await response.json();
+      const data = await createProject(projectName, []);
       console.log('Created project:', data);
 
       // Create a new project with the UUID from the backend
@@ -311,12 +291,7 @@ function WebScrapingDashboard() {
       console.log('Fetching scraping sessions for project:', projectId);
 
       // Fetch scraping sessions from the backend
-      const response = await fetch(`http://localhost:8000/api/v1/projects/${projectId}/sessions`);
-      if (!response.ok) {
-        throw new Error('Failed to fetch scraping sessions');
-      }
-
-      const sessions = await response.json();
+      const sessions = await getScrapedSessions(projectId);
       console.log('Fetched scraping sessions:', sessions);
 
       if (!sessions || sessions.length === 0) {
@@ -345,7 +320,7 @@ function WebScrapingDashboard() {
       }
 
       // Fetch project URLs to get conditions and display format (in parallel)
-      const projectUrlsPromise = fetch(`http://localhost:8000/api/v1/projects/${projectId}/urls`)
+      const projectUrlsPromise = fetch(`${API_URL}/projects/${projectId}/urls/`)
         .then(res => res.ok ? res.json() : [])
         .catch(err => {
           console.warn('Failed to fetch project URLs, using default values:', err);
@@ -507,16 +482,7 @@ function WebScrapingDashboard() {
       setIsDeletingProject(true);
 
       // Call the backend API to delete the project
-      const response = await fetch(`http://localhost:8000/api/v1/projects/${projectToDelete.id}`, {
-        method: 'DELETE',
-        headers: {
-          'Content-Type': 'application/json',
-        },
-      });
-
-      if (!response.ok) {
-        throw new Error('Failed to delete project');
-      }
+      await deleteProject(projectToDelete.id);
 
       // Update the frontend state
       setProjects(prevProjects => prevProjects.filter(p => p.id !== projectToDelete.id));
