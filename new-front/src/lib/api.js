@@ -42,15 +42,19 @@ console.log('  - REACT_APP_API_URL:', process.env.REACT_APP_API_URL);
 console.log('  - NODE_ENV:', process.env.NODE_ENV);
 console.log('  - Final API_URL:', API_URL);
 
-// Get Azure OpenAI credentials from localStorage or use empty values
+// Get Azure OpenAI credentials from environment variables or localStorage
 const getAzureOpenAICredentials = () => {
-  // Try to get the API key from localStorage
-  const apiKey = localStorage.getItem('azureApiKey') || '';
-  const endpoint = localStorage.getItem('azureEndpoint') || '';
-  
+  // First try environment variables (for production deployment)
+  const envApiKey = process.env.REACT_APP_AZURE_OPENAI_API_KEY;
+  const envEndpoint = process.env.REACT_APP_AZURE_OPENAI_ENDPOINT;
+
+  // Fallback to localStorage (for development)
+  const localApiKey = localStorage.getItem('azureApiKey') || '';
+  const localEndpoint = localStorage.getItem('azureEndpoint') || '';
+
   return {
-    api_key: apiKey,
-    endpoint: endpoint,
+    api_key: envApiKey || localApiKey,
+    endpoint: envEndpoint || localEndpoint,
   };
 };
 

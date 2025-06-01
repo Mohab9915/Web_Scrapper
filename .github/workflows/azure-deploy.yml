@@ -102,6 +102,8 @@ jobs:
         push: true
         build-args: |
           REACT_APP_API_URL=https://scrapemaster-backend-prod.whitemeadow-57a6711f.eastus.azurecontainerapps.io
+          REACT_APP_AZURE_OPENAI_API_KEY=${{ secrets.AZURE_OPENAI_API_KEY }}
+          REACT_APP_AZURE_OPENAI_ENDPOINT=${{ secrets.AZURE_OPENAI_ENDPOINT }}
         tags: |
           ${{ steps.infrastructure.outputs.login_server }}/${{ env.FRONTEND_IMAGE_NAME }}:latest
           ${{ steps.infrastructure.outputs.login_server }}/${{ env.FRONTEND_IMAGE_NAME }}:${{ github.sha }}
