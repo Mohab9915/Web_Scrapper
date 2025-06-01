@@ -1,0 +1,195 @@
+{
+  "phase_1_component_analysis": {
+    "create_project": {
+      "status": "PASS",
+      "details": "Project created with ID: d4be0001-33e0-4ac5-bb6f-e50a45165b06",
+      "timestamp": "2025-06-01T01:58:11.450726"
+    },
+    "add_url_1": {
+      "status": "PASS",
+      "details": "URL added: https://example.com",
+      "timestamp": "2025-06-01T01:58:12.231777"
+    },
+    "add_url_2": {
+      "status": "PASS",
+      "details": "URL added: https://httpbin.org/json",
+      "timestamp": "2025-06-01T01:58:13.050674"
+    },
+    "url_storage_validation": {
+      "status": "PASS",
+      "details": "All 2 URLs stored correctly",
+      "timestamp": "2025-06-01T01:58:13.664430"
+    },
+    "conditions_storage": {
+      "status": "PASS",
+      "details": "All conditions stored correctly",
+      "timestamp": "2025-06-01T01:58:14.279020"
+    },
+    "display_format_storage": {
+      "status": "PASS",
+      "details": "All display formats stored correctly",
+      "timestamp": "2025-06-01T01:58:14.745169"
+    },
+    "execute_scraping": {
+      "status": "FAIL",
+      "details": "Status: 500, Response: {\"detail\":\"An unexpected error occurred. Please contact support if the problem persists.\"}",
+      "timestamp": "2025-06-01T01:58:20.142515"
+    },
+    "scraping_results_verification": {
+      "status": "FAIL",
+      "details": "Session missing fields: ['scraped_at']",
+      "timestamp": "2025-06-01T01:58:25.648625"
+    },
+    "enable_rag": {
+      "status": "PASS",
+      "details": "RAG enabled for project",
+      "timestamp": "2025-06-01T01:58:26.981098"
+    },
+    "rag_processing": {
+      "status": "PENDING",
+      "details": "RAG processing may still be in progress",
+      "timestamp": "2025-06-01T01:58:37.237688"
+    }
+  },
+  "phase_2_pipeline_integration": {
+    "projects_endpoint": {
+      "status": "PASS",
+      "details": "Retrieved 1 projects",
+      "timestamp": "2025-06-01T01:58:37.677724"
+    },
+    "urls_endpoint": {
+      "status": "PASS",
+      "details": "Retrieved 2 URLs",
+      "timestamp": "2025-06-01T01:58:38.118692"
+    },
+    "sessions_endpoint": {
+      "status": "PASS",
+      "details": "Retrieved 2 sessions",
+      "timestamp": "2025-06-01T01:58:38.332616"
+    },
+    "url_session_consistency": {
+      "status": "FAIL",
+      "details": "No URLs have associated sessions",
+      "timestamp": "2025-06-01T01:58:38.943034"
+    }
+  },
+  "phase_3_rescaping_verification": {
+    "single_session_rule": {
+      "status": "FAIL",
+      "details": "Re-scraping failed: 500",
+      "timestamp": "2025-06-01T01:58:44.519127"
+    },
+    "data_cleanup": {
+      "status": "PASS",
+      "details": "No duplicate sessions found",
+      "timestamp": "2025-06-01T01:58:44.725376"
+    }
+  },
+  "phase_4_ui_functionality": {
+    "rag_query": {
+      "status": "FAIL",
+      "details": "Status: 400, Response: {\"detail\":\"No scraped data found for this project. Please scrape some URLs first.\"}",
+      "timestamp": "2025-06-01T01:58:45.740236"
+    },
+    "enhanced_rag_query": {
+      "status": "PASS",
+      "details": "Enhanced RAG query successful",
+      "timestamp": "2025-06-01T01:58:46.385843"
+    },
+    "url_display": {
+      "status": "PASS",
+      "details": "All URLs have proper display data",
+      "timestamp": "2025-06-01T01:58:46.800697"
+    }
+  },
+  "phase_5_data_quality": {
+    "content_verification": {
+      "status": "FAIL",
+      "details": "Quality issues found: 4",
+      "timestamp": "2025-06-01T01:58:47.006052"
+    },
+    "response_quality_1": {
+      "status": "FAIL",
+      "details": "Query failed: 400",
+      "timestamp": "2025-06-01T01:58:48.000044"
+    },
+    "response_quality_2": {
+      "status": "FAIL",
+      "details": "Query failed: 400",
+      "timestamp": "2025-06-01T01:58:49.413728"
+    },
+    "response_quality_3": {
+      "status": "FAIL",
+      "details": "Query failed: 400",
+      "timestamp": "2025-06-01T01:58:50.688609"
+    }
+  },
+  "issues_found": [
+    {
+      "issue": "Scraping failed for https://example.com",
+      "timestamp": "2025-06-01T01:58:20.142556"
+    },
+    {
+      "issue": "Incomplete session data: missing ['scraped_at']",
+      "timestamp": "2025-06-01T01:58:25.648675"
+    },
+    {
+      "issue": "URL-Session linking failed",
+      "timestamp": "2025-06-01T01:58:38.943089"
+    },
+    {
+      "issue": "RAG query failed",
+      "timestamp": "2025-06-01T01:58:45.740309"
+    },
+    {
+      "issue": "Session eea6ee0c-818f-4599-9b59-4425d058a659 missing raw_markdown",
+      "timestamp": "2025-06-01T01:58:47.006122"
+    },
+    {
+      "issue": "Session eea6ee0c-818f-4599-9b59-4425d058a659 missing structured_data_json",
+      "timestamp": "2025-06-01T01:58:47.006140"
+    },
+    {
+      "issue": "Session 4cb2cfce-001d-4fc4-b414-4f9adec8d6ca missing raw_markdown",
+      "timestamp": "2025-06-01T01:58:47.006153"
+    },
+    {
+      "issue": "Session 4cb2cfce-001d-4fc4-b414-4f9adec8d6ca missing structured_data_json",
+      "timestamp": "2025-06-01T01:58:47.006165"
+    }
+  ],
+  "recommendations": [
+    {
+      "recommendation": "Review RAG ingestion pipeline and embedding generation process",
+      "timestamp": "2025-06-01T01:58:50.688890"
+    },
+    {
+      "recommendation": "Investigate session management and re-scraping logic",
+      "timestamp": "2025-06-01T01:58:50.688948"
+    },
+    {
+      "recommendation": "Check API endpoint implementations and error handling",
+      "timestamp": "2025-06-01T01:58:50.688969"
+    },
+    {
+      "recommendation": "Implement comprehensive error logging for better debugging",
+      "timestamp": "2025-06-01T01:58:50.688982"
+    },
+    {
+      "recommendation": "Add real-time status updates via WebSocket for better UX",
+      "timestamp": "2025-06-01T01:58:50.688994"
+    },
+    {
+      "recommendation": "Consider adding data validation at each pipeline stage",
+      "timestamp": "2025-06-01T01:58:50.689010"
+    },
+    {
+      "recommendation": "Implement automated testing for continuous integration",
+      "timestamp": "2025-06-01T01:58:50.689020"
+    },
+    {
+      "recommendation": "Add performance monitoring for scraping and RAG operations",
+      "timestamp": "2025-06-01T01:58:50.689029"
+    }
+  ]
+}

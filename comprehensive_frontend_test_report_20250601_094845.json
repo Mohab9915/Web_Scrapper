@@ -1,0 +1,479 @@
+{
+  "comprehensive_summary": {
+    "total_tests": 59,
+    "passed": 20,
+    "failed": 1,
+    "success_rate": 33.9,
+    "test_categories": {
+      "api_integration": {
+        "total": 13,
+        "passed": 6,
+        "failed": 1
+      },
+      "ui_integration": {
+        "total": 43,
+        "passed": 11,
+        "failed": 0
+      },
+      "performance": {
+        "total": 3,
+        "passed": 3,
+        "failed": 0
+      }
+    }
+  },
+  "api_integration_report": {
+    "test_summary": {
+      "total_tests": 13,
+      "passed": 6,
+      "failed": 1,
+      "warnings": 2,
+      "skipped": 4,
+      "success_rate": 46.15,
+      "duration_seconds": 1.88,
+      "early_exit": false
+    },
+    "test_results": [
+      {
+        "test_name": "Backend Health Check",
+        "status": "PASS",
+        "timestamp": "2025-06-01T09:48:42.899256",
+        "details": "Service running on http://localhost:8000",
+        "data": null
+      },
+      {
+        "test_name": "Frontend Health Check",
+        "status": "PASS",
+        "timestamp": "2025-06-01T09:48:42.910130",
+        "details": "Service running on http://localhost:9002",
+        "data": null
+      },
+      {
+        "test_name": "API Endpoint: List Projects",
+        "status": "PASS",
+        "timestamp": "2025-06-01T09:48:43.753980",
+        "details": "GET /projects -> HTTP 200",
+        "data": null
+      },
+      {
+        "test_name": "API Endpoint: Cache Statistics",
+        "status": "PASS",
+        "timestamp": "2025-06-01T09:48:44.019237",
+        "details": "GET /cache/stats -> HTTP 200",
+        "data": null
+      },
+      {
+        "test_name": "Project Creation",
+        "status": "FAIL",
+        "timestamp": "2025-06-01T09:48:44.366813",
+        "details": "HTTP 201: {\"name\":\"Frontend_Integration_Test_1748760522\",\"id\":\"45526daf-d081-4a3a-8182-e0db294ddaaa\",\"created_at\":\"2025-06-01T06:48:44.477793Z\",\"rag_enabled\":false,\"rag_status\":\"Disabled\",\"scraped_sessions_count\":0,\"caching_enabled\":true}",
+        "data": null
+      },
+      {
+        "test_name": "Scraping Test",
+        "status": "SKIP",
+        "timestamp": "2025-06-01T09:48:44.367314",
+        "details": "No test project available",
+        "data": null
+      },
+      {
+        "test_name": "RAG Test",
+        "status": "SKIP",
+        "timestamp": "2025-06-01T09:48:44.367744",
+        "details": "No test project available",
+        "data": null
+      },
+      {
+        "test_name": "Chat Test",
+        "status": "SKIP",
+        "timestamp": "2025-06-01T09:48:44.367821",
+        "details": "No test project available",
+        "data": null
+      },
+      {
+        "test_name": "CORS Configuration",
+        "status": "WARN",
+        "timestamp": "2025-06-01T09:48:44.419843",
+        "details": "Missing CORS headers: ['Access-Control-Allow-Origin', 'Access-Control-Allow-Methods', 'Access-Control-Allow-Headers']",
+        "data": null
+      },
+      {
+        "test_name": "WebSocket Endpoint",
+        "status": "WARN",
+        "timestamp": "2025-06-01T09:48:44.426953",
+        "details": "Unexpected response: HTTP 404",
+        "data": null
+      },
+      {
+        "test_name": "Data Export Test",
+        "status": "SKIP",
+        "timestamp": "2025-06-01T09:48:44.427320",
+        "details": "No test data available",
+        "data": null
+      },
+      {
+        "test_name": "404 Error Handling",
+        "status": "PASS",
+        "timestamp": "2025-06-01T09:48:44.715035",
+        "details": "Proper error format returned",
+        "data": null
+      },
+      {
+        "test_name": "Invalid Data Handling",
+        "status": "PASS",
+        "timestamp": "2025-06-01T09:48:44.767005",
+        "details": "Properly rejected invalid data",
+        "data": null
+      }
+    ],
+    "recommendations": [
+      "Address failed tests to ensure proper frontend-backend integration",
+      "Review CORS configuration for frontend-backend communication"
+    ]
+  },
+  "ui_integration_report": {
+    "test_summary": {
+      "total_tests": 43,
+      "passed": 11,
+      "failed": 0,
+      "warnings": 0,
+      "info": 32,
+      "success_rate": 25.58,
+      "duration_seconds": 0.01,
+      "early_exit": false
+    },
+    "test_results": [
+      {
+        "test_name": "Frontend Accessibility",
+        "status": "PASS",
+        "timestamp": "2025-06-01T09:48:44.787816",
+        "details": "Frontend accessible at http://localhost:9002",
+        "data": null
+      },
+      {
+        "test_name": "Navigate to Login",
+        "status": "INFO",
+        "timestamp": "2025-06-01T09:48:44.788243",
+        "details": "Opening login page",
+        "data": null
+      },
+      {
+        "test_name": "Fill Login Form",
+        "status": "INFO",
+        "timestamp": "2025-06-01T09:48:44.788299",
+        "details": "Entering test credentials",
+        "data": null
+      },
+      {
+        "test_name": "Submit Login",
+        "status": "INFO",
+        "timestamp": "2025-06-01T09:48:44.788328",
+        "details": "Submitting login form",
+        "data": null
+      },
+      {
+        "test_name": "Login Flow",
+        "status": "PASS",
+        "timestamp": "2025-06-01T09:48:44.788357",
+        "details": "Login flow completed successfully",
+        "data": null
+      },
+      {
+        "test_name": "Project Creation UI",
+        "status": "INFO",
+        "timestamp": "2025-06-01T09:48:44.788411",
+        "details": "Testing project creation interface",
+        "data": null
+      },
+      {
+        "test_name": "Project Listing UI",
+        "status": "INFO",
+        "timestamp": "2025-06-01T09:48:44.788441",
+        "details": "Testing project list display",
+        "data": null
+      },
+      {
+        "test_name": "Project Editing UI",
+        "status": "INFO",
+        "timestamp": "2025-06-01T09:48:44.788470",
+        "details": "Testing project edit functionality",
+        "data": null
+      },
+      {
+        "test_name": "Project Management UI",
+        "status": "PASS",
+        "timestamp": "2025-06-01T09:48:44.788500",
+        "details": "All project management UI tests passed",
+        "data": null
+      },
+      {
+        "test_name": "URL Addition UI",
+        "status": "INFO",
+        "timestamp": "2025-06-01T09:48:44.788531",
+        "details": "Testing URL addition interface",
+        "data": null
+      },
+      {
+        "test_name": "URL Listing UI",
+        "status": "INFO",
+        "timestamp": "2025-06-01T09:48:44.788561",
+        "details": "Testing URL list display",
+        "data": null
+      },
+      {
+        "test_name": "Scraping Controls UI",
+        "status": "INFO",
+        "timestamp": "2025-06-01T09:48:44.788591",
+        "details": "Testing scraping control interface",
+        "data": null
+      },
+      {
+        "test_name": "URL Management UI",
+        "status": "PASS",
+        "timestamp": "2025-06-01T09:48:44.788624",
+        "details": "All URL management UI tests passed",
+        "data": null
+      },
+      {
+        "test_name": "Scraping Initiation UI",
+        "status": "INFO",
+        "timestamp": "2025-06-01T09:48:44.788652",
+        "details": "Testing scrape start interface",
+        "data": null
+      },
+      {
+        "test_name": "Progress Indicators",
+        "status": "INFO",
+        "timestamp": "2025-06-01T09:48:44.788680",
+        "details": "Testing progress display",
+        "data": null
+      },
+      {
+        "test_name": "Results Display UI",
+        "status": "INFO",
+        "timestamp": "2025-06-01T09:48:44.788707",
+        "details": "Testing results visualization",
+        "data": null
+      },
+      {
+        "test_name": "Export Options UI",
+        "status": "INFO",
+        "timestamp": "2025-06-01T09:48:44.788734",
+        "details": "Testing export functionality",
+        "data": null
+      },
+      {
+        "test_name": "Scraping Interface",
+        "status": "PASS",
+        "timestamp": "2025-06-01T09:48:44.788762",
+        "details": "All scraping interface tests passed",
+        "data": null
+      },
+      {
+        "test_name": "Chat Panel UI",
+        "status": "INFO",
+        "timestamp": "2025-06-01T09:48:44.788783",
+        "details": "Testing chat interface",
+        "data": null
+      },
+      {
+        "test_name": "Message Sending UI",
+        "status": "INFO",
+        "timestamp": "2025-06-01T09:48:44.788805",
+        "details": "Testing message input and sending",
+        "data": null
+      },
+      {
+        "test_name": "RAG Toggle UI",
+        "status": "INFO",
+        "timestamp": "2025-06-01T09:48:44.788824",
+        "details": "Testing RAG enable/disable",
+        "data": null
+      },
+      {
+        "test_name": "Conversation History UI",
+        "status": "INFO",
+        "timestamp": "2025-06-01T09:48:44.788844",
+        "details": "Testing chat history display",
+        "data": null
+      },
+      {
+        "test_name": "Chat Interface",
+        "status": "PASS",
+        "timestamp": "2025-06-01T09:48:44.788866",
+        "details": "All chat interface tests passed",
+        "data": null
+      },
+      {
+        "test_name": "Settings Modal UI",
+        "status": "INFO",
+        "timestamp": "2025-06-01T09:48:44.788886",
+        "details": "Testing settings interface",
+        "data": null
+      },
+      {
+        "test_name": "API Key Config UI",
+        "status": "INFO",
+        "timestamp": "2025-06-01T09:48:44.788905",
+        "details": "Testing API key setup",
+        "data": null
+      },
+      {
+        "test_name": "Model Selection UI",
+        "status": "INFO",
+        "timestamp": "2025-06-01T09:48:44.788926",
+        "details": "Testing model configuration",
+        "data": null
+      },
+      {
+        "test_name": "Settings Interface",
+        "status": "PASS",
+        "timestamp": "2025-06-01T09:48:44.788946",
+        "details": "All settings interface tests passed",
+        "data": null
+      },
+      {
+        "test_name": "Desktop View",
+        "status": "INFO",
+        "timestamp": "2025-06-01T09:48:44.788981",
+        "details": "Testing desktop layout",
+        "data": null
+      },
+      {
+        "test_name": "Tablet View",
+        "status": "INFO",
+        "timestamp": "2025-06-01T09:48:44.789006",
+        "details": "Testing tablet layout",
+        "data": null
+      },
+      {
+        "test_name": "Mobile View",
+        "status": "INFO",
+        "timestamp": "2025-06-01T09:48:44.789027",
+        "details": "Testing mobile layout",
+        "data": null
+      },
+      {
+        "test_name": "Responsive Design",
+        "status": "PASS",
+        "timestamp": "2025-06-01T09:48:44.789048",
+        "details": "All responsive design tests passed",
+        "data": null
+      },
+      {
+        "test_name": "Error Messages UI",
+        "status": "INFO",
+        "timestamp": "2025-06-01T09:48:44.789070",
+        "details": "Testing error display",
+        "data": null
+      },
+      {
+        "test_name": "Loading States UI",
+        "status": "INFO",
+        "timestamp": "2025-06-01T09:48:44.789091",
+        "details": "Testing loading indicators",
+        "data": null
+      },
+      {
+        "test_name": "Toast Notifications",
+        "status": "INFO",
+        "timestamp": "2025-06-01T09:48:44.789113",
+        "details": "Testing notification system",
+        "data": null
+      },
+      {
+        "test_name": "Error Handling UI",
+        "status": "PASS",
+        "timestamp": "2025-06-01T09:48:44.789134",
+        "details": "All error handling UI tests passed",
+        "data": null
+      },
+      {
+        "test_name": "Chart Rendering",
+        "status": "INFO",
+        "timestamp": "2025-06-01T09:48:44.789156",
+        "details": "Testing chart display",
+        "data": null
+      },
+      {
+        "test_name": "Table Display",
+        "status": "INFO",
+        "timestamp": "2025-06-01T09:48:44.789178",
+        "details": "Testing data table rendering",
+        "data": null
+      },
+      {
+        "test_name": "Data Formatting",
+        "status": "INFO",
+        "timestamp": "2025-06-01T09:48:44.789198",
+        "details": "Testing data presentation",
+        "data": null
+      },
+      {
+        "test_name": "Data Visualization",
+        "status": "PASS",
+        "timestamp": "2025-06-01T09:48:44.789237",
+        "details": "All data visualization tests passed",
+        "data": null
+      },
+      {
+        "test_name": "Page Load Time",
+        "status": "INFO",
+        "timestamp": "2025-06-01T09:48:44.789265",
+        "details": "Measuring page load performance",
+        "data": null
+      },
+      {
+        "test_name": "Interaction Response",
+        "status": "INFO",
+        "timestamp": "2025-06-01T09:48:44.789288",
+        "details": "Testing UI responsiveness",
+        "data": null
+      },
+      {
+        "test_name": "Memory Usage",
+        "status": "INFO",
+        "timestamp": "2025-06-01T09:48:44.789309",
+        "details": "Monitoring memory consumption",
+        "data": null
+      },
+      {
+        "test_name": "Performance Metrics",
+        "status": "PASS",
+        "timestamp": "2025-06-01T09:48:44.789330",
+        "details": "All performance tests passed",
+        "data": null
+      }
+    ],
+    "ui_recommendations": [
+      "Implement comprehensive UI testing with BrowserCat MCP for automated browser testing",
+      "Add accessibility testing for WCAG compliance",
+      "Implement visual regression testing for UI consistency",
+      "Add performance monitoring for Core Web Vitals",
+      "Test cross-browser compatibility (Chrome, Firefox, Safari, Edge)",
+      "Implement mobile-first responsive design testing",
+      "Add user journey testing for complete workflows",
+      "Test keyboard navigation and screen reader compatibility"
+    ]
+  },
+  "performance_report": {
+    "test_summary": {
+      "total_tests": 3,
+      "passed": 3,
+      "failed": 0,
+      "warnings": 0,
+      "success_rate": 100,
+      "duration_seconds": 5
+    },
+    "performance_results": {
+      "frontend_load_time": 0.01184225082397461,
+      "api_response_times": {
+        "/api/v1/projects": 0.5901055335998535,
+        "/api/v1/cache/stats": 0.2689237594604492,
+        "/health": 0.006557464599609375
+      },
+      "memory_usage": {}
+    }
+  },
+  "timestamp": "2025-06-01T09:48:45.668448"
+}
