@@ -1,22 +1,28 @@
+// Azure Container Apps Deployment Template (Phase 2)
+// Deploys container apps after images are built and pushed
+
+@description('Location for all resources')
+param location string = resourceGroup().location
+
 @description('Name prefix for all resources')
 param namePrefix string = 'scrapemaster'
 
 @description('Environment name (dev, staging, prod)')
 param environment string = 'prod'
 
-@description('Container registry login server')
+@description('Container Registry Login Server')
 param containerRegistryLoginServer string
 
-@description('Container registry name')
+@description('Container Registry Name')
 param containerRegistryName string
 
-@description('Container app environment resource ID')
+@description('Container App Environment ID')
 param containerAppEnvironmentId string
 
-@description('Backend image tag')
+@description('Backend Image Tag')
 param backendImageTag string = 'latest'
 
-@description('Frontend image tag')
+@description('Frontend Image Tag')
 param frontendImageTag string = 'latest'
 
 @description('Supabase URL')
@@ -31,19 +37,28 @@ param supabaseKey string
 @secure()
 param azureOpenAIApiKey string
 
-@description('Azure OpenAI Endpoint')
-@secure()
-param azureOpenAIEndpoint string
+@description('Azure OpenAI Endpoint - Fixed to use correct cognitiveservices.azure.com domain')
+param azureOpenAIEndpoint string = 'https://practicehub3994533910.cognitiveservices.azure.com/'
 
+@description('Container Registry Password')
+@secure()
+param containerRegistryPassword string
+
+// Variables
 var backendAppName = '${namePrefix}-backend-${environment}'
 var frontendAppName = '${namePrefix}-frontend-${environment}'
 
+// Get existing container registry for credentials
+resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-01-01-preview' existing = {
+  name: containerRegistryName
+}
+
 // Backend Container App
-resource backendApp 'Microsoft.App/containerApps@2024-03-01' = {
+resource backendContainerApp 'Microsoft.App/containerApps@2023-05-01' = {
   name: backendAppName
-  location: resourceGroup().location
+  location: location
   properties: {
-    environmentId: containerAppEnvironmentId
+    managedEnvironmentId: containerAppEnvironmentId
     configuration: {
       activeRevisionsMode: 'Single'
       ingress: {
@@ -57,57 +72,108 @@ resource backendApp 'Microsoft.App/containerApps@2024-03-01' = {
           }
         ]
       }
+      secrets: [
+        {
+          name: 'supabase-url'
+          value: supabaseUrl
+        }
+        {
+          name: 'supabase-key'
+          value: supabaseKey
+        }
+        {
+          name: 'azure-openai-api-key'
+          value: azureOpenAIApiKey
+        }
+        {
+          name: 'container-registry-password'
+          value: containerRegistryPassword
+        }
+      ]
       registries: [
         {
           server: containerRegistryLoginServer
-          identity: 'system'
+          username: containerRegistry.name
+          passwordSecretRef: 'container-registry-password'
         }
       ]
     }
     template: {
       containers: [
         {
-          name: 'backend'
           image: '${containerRegistryLoginServer}/scrapemaster/backend:${backendImageTag}'
+          name: 'backend'
           env: [
             {
               name: 'SUPABASE_URL'
-              value: supabaseUrl
+              secretRef: 'supabase-url'
             }
             {
               name: 'SUPABASE_KEY'
-              value: supabaseKey
+              secretRef: 'supabase-key'
             }
             {
               name: 'AZURE_OPENAI_API_KEY'
-              value: azureOpenAIApiKey
+              secretRef: 'azure-openai-api-key'
             }
             {
               name: 'AZURE_OPENAI_ENDPOINT'
               value: azureOpenAIEndpoint
             }
             {
+              name: 'AZURE_OPENAI_API_VERSION'
+              value: '2024-12-01-preview'
+            }
+            {
               name: 'AZURE_OPENAI_MODEL'
               value: 'gpt-4o'
             }
             {
-              name: 'AZURE_OPENAI_EMBEDDING_MODEL'
+              name: 'AZURE_EMBEDDING_MODEL'
               value: 'text-embedding-ada-002'
             }
             {
-              name: 'PORT'
-              value: '8000'
+              name: 'BROWSER_CONTROL_TYPE'
+              value: 'simulated'
+            }
+            {
+              name: 'EMBEDDING_BATCH_SIZE'
+              value: '20'
+            }
+            {
+              name: 'WEB_CACHE_EXPIRY_HOURS'
+              value: '24'
             }
           ]
           resources: {
-            cpu: json('1.0')
-            memory: '2Gi'
+            cpu: json('0.5')
+            memory: '1Gi'
           }
+          probes: [
+            {
+              type: 'Liveness'
+              httpGet: {
+                path: '/health'
+                port: 8000
+              }
+              initialDelaySeconds: 30
+              periodSeconds: 10
+            }
+            {
+              type: 'Readiness'
+              httpGet: {
+                path: '/health'
+                port: 8000
+              }
+              initialDelaySeconds: 5
+              periodSeconds: 5
+            }
+          ]
         }
       ]
       scale: {
         minReplicas: 1
-        maxReplicas: 3
+        maxReplicas: 5
         rules: [
           {
             name: 'http-scaling'
@@ -121,17 +187,14 @@ resource backendApp 'Microsoft.App/containerApps@2024-03-01' = {
       }
     }
   }
-  identity: {
-    type: 'SystemAssigned'
-  }
 }
 
 // Frontend Container App
-resource frontendApp 'Microsoft.App/containerApps@2024-03-01' = {
+resource frontendContainerApp 'Microsoft.App/containerApps@2023-05-01' = {
   name: frontendAppName
-  location: resourceGroup().location
+  location: location
   properties: {
-    environmentId: containerAppEnvironmentId
+    managedEnvironmentId: containerAppEnvironmentId
     configuration: {
       activeRevisionsMode: 'Single'
       ingress: {
@@ -145,22 +208,55 @@ resource frontendApp 'Microsoft.App/containerApps@2024-03-01' = {
           }
         ]
       }
+      secrets: [
+        {
+          name: 'container-registry-password'
+          value: containerRegistryPassword
+        }
+      ]
       registries: [
         {
           server: containerRegistryLoginServer
-          identity: 'system'
+          username: containerRegistry.name
+          passwordSecretRef: 'container-registry-password'
         }
       ]
     }
     template: {
       containers: [
         {
-          name: 'frontend'
           image: '${containerRegistryLoginServer}/scrapemaster/frontend:${frontendImageTag}'
+          name: 'frontend'
+          env: [
+            {
+              name: 'REACT_APP_API_URL'
+              value: 'https://${backendContainerApp.properties.configuration.ingress.fqdn}'
+            }
+          ]
           resources: {
-            cpu: json('0.5')
-            memory: '1Gi'
+            cpu: json('0.25')
+            memory: '0.5Gi'
           }
+          probes: [
+            {
+              type: 'Liveness'
+              httpGet: {
+                path: '/'
+                port: 80
+              }
+              initialDelaySeconds: 30
+              periodSeconds: 10
+            }
+            {
+              type: 'Readiness'
+              httpGet: {
+                path: '/'
+                port: 80
+              }
+              initialDelaySeconds: 5
+              periodSeconds: 5
+            }
+          ]
         }
       ]
       scale: {
@@ -179,35 +275,10 @@ resource frontendApp 'Microsoft.App/containerApps@2024-03-01' = {
       }
     }
   }
-  identity: {
-    type: 'SystemAssigned'
-  }
-}
-
-// Grant ACR pull permissions to backend app
-resource backendAcrAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(backendApp.id, containerRegistryName, 'AcrPull')
-  scope: resourceGroup()
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d') // AcrPull
-    principalId: backendApp.identity.principalId
-    principalType: 'ServicePrincipal'
-  }
-}
-
-// Grant ACR pull permissions to frontend app
-resource frontendAcrAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
-  name: guid(frontendApp.id, containerRegistryName, 'AcrPull')
-  scope: resourceGroup()
-  properties: {
-    roleDefinitionId: subscriptionResourceId('Microsoft.Authorization/roleDefinitions', '7f951dda-4ed3-4680-a7ca-43fe172d538d') // AcrPull
-    principalId: frontendApp.identity.principalId
-    principalType: 'ServicePrincipal'
-  }
 }
 
 // Outputs
-output backendUrl string = 'https://${backendApp.properties.configuration.ingress.fqdn}'
-output frontendUrl string = 'https://${frontendApp.properties.configuration.ingress.fqdn}'
-output backendAppName string = backendApp.name
-output frontendAppName string = frontendApp.name
+output backendUrl string = 'https://${backendContainerApp.properties.configuration.ingress.fqdn}'
+output frontendUrl string = 'https://${frontendContainerApp.properties.configuration.ingress.fqdn}'
+output backendAppName string = backendContainerApp.name
+output frontendAppName string = frontendContainerApp.name

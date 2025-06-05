@@ -92,6 +92,12 @@ jobs:
       run: |
         APPS_DEPLOYMENT_NAME="scrapemaster-apps-$(date +%Y%m%d-%H%M%S)"
 
+        # Get container registry password
+        REGISTRY_PASSWORD=$(az acr credential show \
+          --name ${{ steps.infrastructure.outputs.registry_name }} \
+          --query "passwords[0].value" \
+          --output tsv)
+
         echo "Deploying container apps with built images..."
         az deployment group create \
           --resource-group ${{ env.AZURE_RESOURCE_GROUP }} \
@@ -108,7 +114,8 @@ jobs:
             supabaseUrl="${{ secrets.SUPABASE_URL }}" \
             supabaseKey="${{ secrets.SUPABASE_KEY }}" \
             azureOpenAIApiKey="${{ secrets.AZURE_OPENAI_API_KEY }}" \
-            azureOpenAIEndpoint="${{ secrets.AZURE_OPENAI_ENDPOINT }}"
+            azureOpenAIEndpoint="${{ secrets.AZURE_OPENAI_ENDPOINT }}" \
+            containerRegistryPassword="$REGISTRY_PASSWORD"
 
         echo "apps_deployment_name=$APPS_DEPLOYMENT_NAME" >> $GITHUB_OUTPUT
 
