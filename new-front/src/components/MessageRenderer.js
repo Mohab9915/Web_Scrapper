@@ -35,6 +35,11 @@ const MessageRenderer = memo(({ content, chartData, onCopy }) => {
   }, []);
 
   const renderEnhancedText = (text) => {
+    // Handle empty text
+    if (!text || !text.trim()) {
+      return null;
+    }
+
     // Split by paragraphs and render with better formatting
     const paragraphs = text.split('\n\n');
     return paragraphs.map((paragraph, index) => (
@@ -329,12 +334,6 @@ const MessageRenderer = memo(({ content, chartData, onCopy }) => {
 
   // Memoize chart data - prioritize chartData prop over extracting from content
   const finalChartData = useMemo(() => {
-    console.log('MessageRenderer: Processing chart data', {
-      hasChartDataProp: !!chartData,
-      chartDataType: chartData?.chartType || chartData?.chart_type, // Check both cases
-      hasChartDataData: !!chartData?.data
-    });
-
     // If chartData is provided as a prop, use it directly
     // Handle both chartType (camelCase) and chart_type (snake_case)
     if (chartData && (chartData.chartType || chartData.chart_type) && chartData.data) {
@@ -343,10 +342,9 @@ const MessageRenderer = memo(({ content, chartData, onCopy }) => {
         ...chartData,
         chartType: chartData.chartType || chartData.chart_type,
       };
-      console.log('MessageRenderer: Using chartData prop', normalizedChartData);
       return normalizedChartData;
     }
-    
+
     // Otherwise, try to extract from content (legacy support)
     const extracted = extractChartData(content);
     if (extracted) {
@@ -356,18 +354,19 @@ const MessageRenderer = memo(({ content, chartData, onCopy }) => {
         chartType: extracted.chartType || extracted.chart_type,
       };
     }
-    console.log('MessageRenderer: No chart data extracted from content');
     return null;
   }, [chartData, content, extractChartData]);
 
   // Parse and render different content types
   const renderContent = useMemo(() => {
-    console.log('MessageRenderer: Rendering content', { hasFinalChartData: !!finalChartData });
-
     // Handle chart data first (highest priority)
     if (finalChartData) {
-      console.log('MessageRenderer: Rendering chart with text');
-      return renderChartWithText(content, finalChartData);
+      return renderChartWithText(content || "", finalChartData);
+    }
+
+    // Handle empty content
+    if (!content || !content.trim()) {
+      return null;
     }
 
     // Handle code blocks (tables, JSON, etc.)
