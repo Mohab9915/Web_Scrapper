@@ -11,6 +11,34 @@ from ..models.project import ProjectCreate, ProjectUpdate, ProjectResponse
 class ProjectService:
     """Service for project management."""
 
+    async def get_user_projects(self, user_id: UUID) -> List[ProjectResponse]:
+        """
+        Get all projects for a specific user.
+
+        Args:
+            user_id (UUID): User ID
+
+        Returns:
+            List[ProjectResponse]: List of user's projects
+        """
+        response = supabase.table("projects").select("*").eq("user_id", str(user_id)).execute()
+        projects = []
+
+        for project_data in response.data:
+            # Get scraped sessions count for this project
+            sessions_response = supabase.table("scrape_sessions").select("id").eq("project_id", project_data["id"]).execute()
+            scraped_sessions_count = len(sessions_response.data)
+
+            # Determine RAG status
+            rag_status = "Enabled" if project_data.get("rag_enabled", False) else "Disabled"
+
+            project_data["scraped_sessions_count"] = scraped_sessions_count
+            project_data["rag_status"] = rag_status
+
+            projects.append(ProjectResponse(**project_data))
+
+        return projects
+
     async def get_all_projects(self) -> List[ProjectResponse]:
         """
         Get all projects with optimized session count query.
@@ -71,12 +99,13 @@ class ProjectService:
 
         return ProjectResponse(**project)
 
-    async def create_project(self, project_data: ProjectCreate) -> ProjectResponse:
+    async def create_project(self, project_data: ProjectCreate, user_id: UUID) -> ProjectResponse:
         """
-        Create a new project.
+        Create a new project for a specific user.
 
         Args:
             project_data (ProjectCreate): Project data
+            user_id (UUID): User ID
 
         Returns:
             ProjectResponse: Created project
@@ -84,13 +113,28 @@ class ProjectService:
         # Get caching preference from the project data or default to True
         caching_enabled = True  # Default to True for backward compatibility
 
-        response = supabase.table("projects").insert({
+        project_insert_data = {
+            "user_id": str(user_id),
             "name": project_data.name,
             "rag_enabled": False,
             "caching_enabled": caching_enabled
-        }).execute()
+        }
+
+        print(f"🔍 Creating project with data: {project_insert_data}")
+
+        response = supabase.table("projects").insert(project_insert_data).execute()
+
+        print(f"🔍 Supabase response: {response}")
+        print(f"🔍 Response data: {response.data}")
+        print(f"🔍 Response error: {getattr(response, 'error', None)}")
+
+        if not response.data:
+            error_detail = getattr(response, 'error', 'Unknown error')
+            print(f"❌ Failed to create project. Error: {error_detail}")
+            raise HTTPException(status_code=400, detail=f"Failed to create project: {error_detail}")
 
         project = response.data[0]
+        print(f"✅ Project created successfully: {project}")
         project["scraped_sessions_count"] = 0
         project["rag_status"] = "Disabled"
 

@@ -37,18 +37,19 @@ class ScrapingService:
     def __init__(self, rag_service: RAGService = Depends()):
         self.rag_service = rag_service
 
-    async def get_sessions_by_project(self, project_id: UUID) -> List[Dict[str, Any]]:
+    async def get_sessions_by_project(self, project_id: UUID, user_id: UUID) -> List[Dict[str, Any]]:
         """
         Get all URLs for a project, including their latest scrape session data if available.
         Args:
             project_id (UUID): Project ID
+            user_id (UUID): User ID for authentication
         Returns:
             List[Dict[str, Any]]: List of URLs with their status and latest scrape data.
         """
-        # Get project URLs first
+        # Get project URLs first (filtered by user_id for security)
         project_urls_response = supabase.table("project_urls").select(
             "id, project_id, url, conditions, display_format, created_at, status, rag_enabled, last_scraped_session_id"
-        ).eq("project_id", str(project_id)).order("created_at", desc=True).execute()
+        ).eq("project_id", str(project_id)).eq("user_id", str(user_id)).order("created_at", desc=True).execute()
 
         if not project_urls_response.data:
             return []
@@ -63,7 +64,7 @@ class ScrapingService:
                 try:
                     session_response = supabase.table("scrape_sessions").select(
                         "id, project_id, url, scraped_at, status, raw_markdown, structured_data_json, display_format, formatted_tabular_data"
-                    ).eq("id", pu_entry["last_scraped_session_id"]).single().execute()
+                    ).eq("id", pu_entry["last_scraped_session_id"]).eq("user_id", str(user_id)).single().execute()
 
                     if session_response.data:
                         raw_session_data = session_response.data

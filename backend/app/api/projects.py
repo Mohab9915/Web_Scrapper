@@ -7,31 +7,46 @@ from uuid import UUID
 
 from ..models.project import ProjectCreate, ProjectUpdate, ProjectResponse
 from ..services.project_service import ProjectService
+from ..dependencies.auth import get_current_user, get_current_user_id
+from ..models.auth import UserResponse
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
 @router.get("/", response_model=List[ProjectResponse])
-async def get_projects(project_service: ProjectService = Depends()):
+async def get_projects(
+    current_user_id: UUID = Depends(get_current_user_id),
+    project_service: ProjectService = Depends()
+):
     """
-    Get all projects.
-    
+    Get all projects for the authenticated user.
+
+    Args:
+        current_user_id: ID of the authenticated user
+        project_service: Project service instance
+
     Returns:
-        List[ProjectResponse]: List of projects
+        List[ProjectResponse]: List of user's projects
     """
-    return await project_service.get_all_projects()
+    return await project_service.get_user_projects(current_user_id)
 
 @router.post("/", response_model=ProjectResponse, status_code=status.HTTP_201_CREATED)
-async def create_project(project: ProjectCreate, project_service: ProjectService = Depends()):
+async def create_project(
+    project: ProjectCreate,
+    current_user_id: UUID = Depends(get_current_user_id),
+    project_service: ProjectService = Depends()
+):
     """
-    Create a new project.
-    
+    Create a new project for the authenticated user.
+
     Args:
-        project (ProjectCreate): Project data
-        
+        project: Project data
+        current_user_id: ID of the authenticated user
+        project_service: Project service instance
+
     Returns:
         ProjectResponse: Created project
     """
-    return await project_service.create_project(project)
+    return await project_service.create_project(project, current_user_id)
 
 @router.get("/{project_id}", response_model=ProjectResponse)
 async def get_project(project_id: UUID, project_service: ProjectService = Depends()):

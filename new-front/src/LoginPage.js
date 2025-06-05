@@ -1,10 +1,14 @@
 import { useState } from 'react';
 import { MessageCircle, Send, Globe, Plus,
-         Trash2, Settings, AlertCircle, PlusCircle, XCircle, 
-         Download, RefreshCw, Lock, User, Key, Mail, Info, 
-         ChevronLeft, ChevronRight, ChevronDown } from 'lucide-react';
+         Trash2, Settings, AlertCircle, PlusCircle, XCircle,
+         Download, RefreshCw, Lock, User, Key, Mail, Info,
+         ChevronLeft, ChevronRight, ChevronDown, Eye, EyeOff } from 'lucide-react';
+import { useAuth } from './contexts/AuthContext';
+import { useToast } from './components/Toast';
 
-function LoginPage({ onLogin }) {
+function LoginPage() {
+  const { signIn, signUp, loading, resendConfirmation } = useAuth();
+  const toast = useToast();
 
   const [loginEmail, setLoginEmail] = useState('');
   const [loginPassword, setLoginPassword] = useState('');
@@ -13,19 +17,89 @@ function LoginPage({ onLogin }) {
   const [signupEmail, setSignupEmail] = useState('');
   const [signupPassword, setSignupPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
+  const [showConfirmPassword, setShowConfirmPassword] = useState(false);
+  const [showEmailConfirmation, setShowEmailConfirmation] = useState(false);
+  const [pendingEmail, setPendingEmail] = useState('');
 
-  const handleLogin = (e) => {
+  const handleLogin = async (e) => {
     e.preventDefault();
-    if (loginEmail && loginPassword) {
-      onLogin({ email: loginEmail, password: loginPassword });
+
+    if (!loginEmail || !loginPassword) {
+      toast.error('Please fill in all fields');
+      return;
+    }
+
+    try {
+      const { data, error } = await signIn(loginEmail, loginPassword);
+
+      if (error) {
+        if (error.message.includes('Email not confirmed')) {
+          setPendingEmail(loginEmail);
+          setShowEmailConfirmation(true);
+          toast.error('Please check your email and click the confirmation link before signing in.');
+        } else {
+          toast.error(error.message || 'Login failed');
+        }
+      } else {
+        toast.success('Login successful!');
+      }
+    } catch (error) {
+      toast.error('An unexpected error occurred');
     }
   };
 
-  const handleSignup = (e) => {
+  const handleSignup = async (e) => {
     e.preventDefault();
-    if (signupEmail && signupPassword && confirmPassword === signupPassword) {
-      alert('Account created! Please log in.');
-      setIsSignUp(false);
+
+    if (!signupEmail || !signupPassword || !confirmPassword) {
+      toast.error('Please fill in all fields');
+      return;
+    }
+
+    if (signupPassword !== confirmPassword) {
+      toast.error('Passwords do not match');
+      return;
+    }
+
+    if (signupPassword.length < 6) {
+      toast.error('Password must be at least 6 characters long');
+      return;
+    }
+
+    try {
+      const { data, error } = await signUp(signupEmail, signupPassword, name);
+
+      if (error) {
+        toast.error(error.message || 'Sign up failed');
+      } else {
+        setPendingEmail(signupEmail);
+        setShowEmailConfirmation(true);
+        toast.success('Account created successfully! Please check your email to verify your account.');
+        // Clear form
+        setName('');
+        setSignupEmail('');
+        setSignupPassword('');
+        setConfirmPassword('');
+      }
+    } catch (error) {
+      toast.error('An unexpected error occurred');
+    }
+  };
+
+  const handleResendConfirmation = async () => {
+    if (!pendingEmail) return;
+
+    try {
+      const { error } = await resendConfirmation(pendingEmail);
+
+      if (error) {
+        toast.error(error.message || 'Failed to resend confirmation email');
+      } else {
+        toast.success('Confirmation email sent! Please check your inbox.');
+      }
+    } catch (error) {
+      toast.error('An unexpected error occurred');
     }
   };
 
@@ -61,10 +135,47 @@ function LoginPage({ onLogin }) {
             {isSignUp ? "Create Account" : "Welcome Back"}
           </h2>
           <p className="text-center text-purple-300 mb-6">
-            {isSignUp ? "Join our web scraping platform" : "Sign in to your account"}
+            {showEmailConfirmation ? "Email Confirmation Required" :
+             isSignUp ? "Join our web scraping platform" : "Sign in to your account"}
           </p>
-          
-          {!isSignUp ? (
+
+          {showEmailConfirmation ? (
+            // Email Confirmation Form
+            <div className="text-center">
+              <div className="mb-6">
+                <div className="mx-auto w-16 h-16 bg-yellow-500/20 rounded-full flex items-center justify-center mb-4">
+                  <Mail className="text-yellow-400" size={32} />
+                </div>
+                <p className="text-purple-200 mb-4">
+                  We've sent a confirmation email to:
+                </p>
+                <p className="text-white font-semibold mb-4">{pendingEmail}</p>
+                <p className="text-purple-300 text-sm mb-6">
+                  Please check your inbox (and spam folder) and click the confirmation link to activate your account.
+                </p>
+              </div>
+
+              <div className="space-y-4">
+                <button
+                  onClick={handleResendConfirmation}
+                  disabled={loading}
+                  className="w-full py-3 bg-yellow-600 hover:bg-yellow-500 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  {loading ? 'Sending...' : 'Resend Confirmation Email'}
+                </button>
+
+                <button
+                  onClick={() => {
+                    setShowEmailConfirmation(false);
+                    setPendingEmail('');
+                  }}
+                  className="w-full py-3 bg-gray-600 hover:bg-gray-500 rounded-lg font-medium transition-colors"
+                >
+                  Back to Login
+                </button>
+              </div>
+            </div>
+          ) : !isSignUp ? (
             // Login Form
             <form onSubmit={handleLogin}>
               <div className="mb-4">
@@ -106,9 +217,10 @@ function LoginPage({ onLogin }) {
 
               <button
                 type="submit"
-                className="btn-primary w-full py-3 text-lg font-semibold"
+                disabled={loading}
+                className="btn-primary w-full py-3 text-lg font-semibold disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Sign In
+                {loading ? 'Signing In...' : 'Sign In'}
               </button>
               
               <div className="mt-6 text-center">
@@ -195,11 +307,12 @@ function LoginPage({ onLogin }) {
                 </div>
               </div>
               
-              <button 
-                type="submit" 
-                className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 rounded-lg font-medium transition-colors"
+              <button
+                type="submit"
+                disabled={loading}
+                className="w-full py-3 bg-indigo-600 hover:bg-indigo-500 rounded-lg font-medium transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
               >
-                Create Account
+                {loading ? 'Creating Account...' : 'Create Account'}
               </button>
               
               <div className="mt-6 text-center">

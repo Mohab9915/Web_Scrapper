@@ -5,7 +5,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .api import projects, scraping, rag, websockets, cache, project_urls, history, project_settings
+from .api import projects, scraping, rag, websockets, cache, project_urls, history, project_settings, auth
 from .config import settings
 from .services.scraping_service import ScrapingService
 from uuid import UUID
@@ -42,6 +42,7 @@ app.add_middleware(
 )
 
 # Include routers
+app.include_router(auth.router, prefix=settings.API_V1_STR)
 app.include_router(projects.router, prefix=settings.API_V1_STR)
 app.include_router(scraping.router, prefix=settings.API_V1_STR)
 app.include_router(rag.router, prefix=settings.API_V1_STR)

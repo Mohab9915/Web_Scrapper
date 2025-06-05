@@ -11,12 +11,30 @@ import ConfirmationModal from './ConfirmationModal';
 import RagManagement from './components/RagManagement';
 import { executeScrape, sendChatMessage, getProjectConversations, createConversation, deleteConversation, getConversationMessages, queryEnhancedRagApi, getProjects, createProject, deleteProject, getScrapedSessions, updateProjectRAGStatus, API_URL } from './lib/api';
 import { useToast } from './components/Toast';
+import { useAuth } from './contexts/AuthContext';
+import { LogOut, User } from 'lucide-react';
 
 function WebScrapingDashboard() {
   const [projects, setProjects] = useState([]);
   const [activeProjectId, setActiveProjectId] = useState(null);
   const activeProject = projects.find(p => p.id === activeProjectId);
   const toast = useToast();
+  const { user, session, getAccessToken, signOut } = useAuth();
+
+  // Debug logging for authentication
+  console.log('🔍 Dashboard Debug:');
+  console.log('  - user:', user);
+  console.log('  - session:', session);
+  console.log('  - activeProjectId:', activeProjectId);
+
+  const handleLogout = async () => {
+    try {
+      await signOut();
+      toast.success('Logged out successfully');
+    } catch (error) {
+      toast.error('Error logging out');
+    }
+  };
 
   // Background data loading function
   const loadProjectDataInBackground = async (projects) => {
@@ -251,9 +269,21 @@ function WebScrapingDashboard() {
 
   const handleAddProject = async (projectName) => {
     try {
+      console.log('🚀 Creating project:', projectName);
+      console.log('🔑 Current user:', user);
+
+      // Check if user is authenticated
+      if (!user) {
+        toast.error('You must be logged in to create a project');
+        return;
+      }
+
+      const accessToken = await getAccessToken();
+      console.log('🎫 Access token:', accessToken ? '[PRESENT]' : '[MISSING]');
+
       // Call the backend API to create a new project
       const data = await createProject(projectName, []);
-      console.log('Created project:', data);
+      console.log('✅ Created project:', data);
 
       // Create a new project with the UUID from the backend
       const newProject = {
@@ -274,9 +304,12 @@ function WebScrapingDashboard() {
 
       // Fetch any existing scraping sessions for the new project
       fetchScrapingSessions(newProject.id);
+
+      toast.success('Project created successfully!');
     } catch (error) {
-      console.error('Error creating project:', error);
-      alert('Failed to create project. Please try again.');
+      console.error('❌ Error creating project:', error);
+      console.error('❌ Error details:', error.response || error);
+      toast.error(`Failed to create project: ${error.message}`);
     }
   };
 
@@ -1465,9 +1498,31 @@ function WebScrapingDashboard() {
               <Settings size={18} />
               <span>Settings</span>
             </button>
-            <div className="relative w-10 h-10 bg-gradient-to-r from-purple-600 to-indigo-600 rounded-full flex items-center justify-center shadow-lg">
-              <span className="font-bold text-white">U</span>
+
+            {/* User Info */}
+            <div className="flex items-center space-x-3">
+              <div className="text-right">
+                <div className="text-sm font-medium text-white">
+                  {user?.user_metadata?.name || user?.email || 'User'}
+                </div>
+                <div className="text-xs text-purple-300">
+                  {user?.email}
+                </div>
+              </div>
+              <div className="relative w-10 h-10 bg-gradient-to-r from-purple-600 to-indigo-600 rounded-full flex items-center justify-center shadow-lg">
+                <User className="text-white" size={16} />
+              </div>
             </div>
+
+            {/* Logout Button */}
+            <button
+              onClick={handleLogout}
+              className="flex items-center space-x-2 px-3 py-2 bg-red-600 hover:bg-red-500 rounded-lg transition-colors"
+              title="Logout"
+            >
+              <LogOut size={16} />
+              <span className="text-sm">Logout</span>
+            </button>
           </div>
         </div>
       </header>

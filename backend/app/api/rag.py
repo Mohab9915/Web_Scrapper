@@ -10,26 +10,30 @@ from ..models.chat import ChatMessageResponse, ChatMessageCreate, ChatMessageReq
 from ..services.rag_service import RAGService
 from ..services.chat_history_service import ChatHistoryService
 from ..services.enhanced_rag_service import EnhancedRAGService
+from ..dependencies.auth import get_current_user, get_current_user_id
+from ..models.auth import UserResponse
 
 router = APIRouter(tags=["rag"])
 
 @router.get("/projects/{project_id}/chat", response_model=List[ChatMessageResponse])
 async def get_chat_messages(
-    project_id: UUID, 
+    project_id: UUID,
     conversation_id: Optional[UUID] = None,
+    current_user_id: UUID = Depends(get_current_user_id),
     rag_service: RAGService = Depends()
 ):
     """
-    Get chat messages for a project.
+    Get chat messages for a project for the authenticated user.
 
     Args:
         project_id (UUID): Project ID
         conversation_id (Optional[UUID]): Specific conversation ID
+        current_user_id (UUID): ID of the authenticated user
 
     Returns:
         List[ChatMessageResponse]: List of chat messages
     """
-    return await rag_service.get_chat_messages(project_id, conversation_id)
+    return await rag_service.get_chat_messages(project_id, conversation_id, current_user_id)
 
 @router.post("/projects/{project_id}/query-rag", response_model=RAGQueryResponse)
 async def query_rag(
@@ -86,6 +90,7 @@ async def post_chat_message(
     request: ChatMessageRequest,
     conversation_id: Optional[UUID] = None,
     session_id: Optional[UUID] = None,
+    current_user_id: UUID = Depends(get_current_user_id),
     rag_service: RAGService = Depends()
 ):
     """
@@ -96,6 +101,7 @@ async def post_chat_message(
         request (ChatMessageRequest): Request data containing content and Azure credentials
         conversation_id (Optional[UUID]): Conversation ID, creates new if None
         session_id (Optional[UUID]): Optional scrape session ID
+        current_user_id (UUID): ID of the authenticated user
 
     Returns:
         ChatMessageResponse: Response with assistant message

@@ -37,6 +37,8 @@ class Settings(BaseSettings):
     AZURE_OPENAI_API_KEY: str = os.getenv("AZURE_OPENAI_API_KEY", "")
     AZURE_OPENAI_API_VERSION: str = os.getenv("AZURE_OPENAI_API_VERSION", "")
     AZURE_OPENAI_MODEL: str = os.getenv("AZURE_OPENAI_MODEL", "")
+    AZURE_CHAT_MODEL: str = os.getenv("AZURE_CHAT_MODEL", "gpt-4o")
+    AZURE_EMBEDDING_MODEL: str = os.getenv("AZURE_EMBEDDING_MODEL", "text-embedding-ada-002")
     
     # OpenAI settings
     OPENAI_API_KEY: str = os.getenv("OPENAI_API_KEY", "")

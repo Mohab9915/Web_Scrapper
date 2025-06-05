@@ -1,6 +1,7 @@
--- Project URLs table
+-- Project URLs table (updated with user_id)
 CREATE TABLE IF NOT EXISTS project_urls (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     url TEXT NOT NULL,
     conditions TEXT NOT NULL,

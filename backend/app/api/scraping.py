@@ -10,21 +10,28 @@ from ..models.scrape_session import (
     InteractiveScrapingResponse, ExecuteScrapeRequest, ExecuteScrapeResponse
 )
 from ..services.scraping_service import ScrapingService
+from ..dependencies.auth import get_current_user, get_current_user_id
+from ..models.auth import UserResponse
 
 router = APIRouter(tags=["scraping"])
 
 @router.get("/projects/{project_id}/sessions", response_model=List[ProjectUrlWithSessionResponse])
-async def get_scraped_sessions(project_id: UUID, scraping_service: ScrapingService = Depends()):
+async def get_scraped_sessions(
+    project_id: UUID,
+    current_user_id: UUID = Depends(get_current_user_id),
+    scraping_service: ScrapingService = Depends()
+):
     """
-    Get all project URLs with their latest scrape session data.
+    Get all project URLs with their latest scrape session data for the authenticated user.
 
     Args:
         project_id (UUID): Project ID
+        current_user_id (UUID): ID of the authenticated user
 
     Returns:
         List[ProjectUrlWithSessionResponse]: List of project URLs with session data
     """
-    return await scraping_service.get_sessions_by_project(project_id)
+    return await scraping_service.get_sessions_by_project(project_id, current_user_id)
 
 @router.post("/projects/{project_id}/initiate-interactive-scrape", response_model=InteractiveScrapingResponse)
 async def initiate_interactive_scrape(

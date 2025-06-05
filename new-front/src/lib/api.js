@@ -1,6 +1,7 @@
 /**
  * API client for the backend server
  */
+import { supabase } from './supabase';
 
 /**
  * Utility function to convert snake_case to camelCase
@@ -31,6 +32,8 @@ function transformKeys(data) {
   return data;
 }
 
+
+
 // Backend API URL - use environment variable or fallback to local development
 export const API_URL = process.env.REACT_APP_API_URL
   ? `${process.env.REACT_APP_API_URL}/api/v1`
@@ -41,6 +44,30 @@ console.log('🔧 API Configuration Debug:');
 console.log('  - REACT_APP_API_URL:', process.env.REACT_APP_API_URL);
 console.log('  - NODE_ENV:', process.env.NODE_ENV);
 console.log('  - Final API_URL:', API_URL);
+
+// Function to get authentication headers
+async function getAuthHeaders() {
+  try {
+    console.log('🔑 Getting auth headers...');
+    const { data: { session }, error } = await supabase.auth.getSession();
+    console.log('🔑 Session:', session ? 'Present' : 'Missing');
+    console.log('🔑 Error:', error);
+
+    if (error || !session) {
+      console.log('🔑 No valid session, returning empty headers');
+      return {};
+    }
+
+    const headers = {
+      'Authorization': `Bearer ${session.access_token}`
+    };
+    console.log('🔑 Auth headers created:', headers);
+    return headers;
+  } catch (error) {
+    console.error('🔑 Error getting auth headers:', error);
+    return {};
+  }
+}
 
 // Get Azure OpenAI credentials from environment variables or localStorage
 const getAzureOpenAICredentials = () => {
@@ -69,10 +96,14 @@ async function fetchWithErrorHandling(url, options = {}) {
     console.log('🔄 Making API request to:', url);
     console.log('📤 Request options:', options);
 
+    // Get authentication headers
+    const authHeaders = await getAuthHeaders();
+
     // Add default headers and timeout
     const defaultOptions = {
       headers: {
         'Content-Type': 'application/json',
+        ...authHeaders,
         ...options.headers
       },
       ...options
@@ -190,7 +221,6 @@ export async function getProjectById(id) {
 export async function createProject(name, initialUrls) {
   return fetchWithErrorHandling(`${API_URL}/projects/`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ name, initial_urls: initialUrls }),
   });
 }
@@ -414,7 +444,6 @@ export async function sendChatMessage(projectId, content, conversationId = null,
 
   return fetchWithErrorHandling(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(messageBody)
   });
 }
@@ -439,7 +468,6 @@ export async function createConversation(projectId, sessionId = null) {
 
   return fetchWithErrorHandling(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({}),
   });
 }

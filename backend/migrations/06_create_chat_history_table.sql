@@ -1,6 +1,7 @@
--- Chat History table for storing conversation messages
+-- Chat History table for storing conversation messages (updated with user_id)
 CREATE TABLE IF NOT EXISTS chat_history (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+    user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     project_id UUID NOT NULL REFERENCES projects(id) ON DELETE CASCADE,
     session_id UUID REFERENCES scrape_sessions(id) ON DELETE SET NULL, -- Optional: link to specific scrape session
     conversation_id UUID NOT NULL, -- Groups messages into conversations
