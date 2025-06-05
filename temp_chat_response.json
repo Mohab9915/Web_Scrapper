@@ -1,4 +1,0 @@
-  % Total    % Received % Xferd  Average Speed   Time    Time     Time  Current
-                                 Dload  Upload   Total   Spent    Left  Speed
-  0     0    0     0    0     0      0      0 --:--:-- --:--:-- --:--:--     0100   185  100   143  100    42  14852   4362 --:--:-- --:--:-- --:--:-- 20555
-{"detail":[{"type":"missing","loc":["body","message"],"msg":"Field required","input":null,"url":"https://errors.pydantic.dev/2.10/v/missing"}]}

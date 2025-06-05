@@ -1,9 +1,7 @@
 import { useState } from 'react';
-import { BrowserRouter as Router, Routes, Route, useLocation } from 'react-router-dom';
+import { BrowserRouter as Router, Routes, Route } from 'react-router-dom';
 import LoginPage from './LoginPage';
 import WebScrapingDashboard from './Dashboard';
-import ChartIntegrationTest from './test/ChartIntegrationTest';
-import ChartTest from './components/ChartTest';
 import { ToastProvider } from './components/Toast';
 
 function App() {
@@ -18,19 +16,7 @@ function App() {
     }
   };
 
-  // Show test component if in test mode
-  if (isTestMode) {
-    return (
-      <Router>
-        <ToastProvider>
-          <Routes>
-            <Route path="/test/chart" element={<ChartTest />} />
-            <Route path="*" element={<ChartIntegrationTest />} />
-          </Routes>
-        </ToastProvider>
-      </Router>
-    );
-  }
+  // Test mode disabled - removed test components
 
   return (
     <Router>

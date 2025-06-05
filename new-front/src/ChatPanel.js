@@ -175,7 +175,7 @@ function ChatPanel({
                       {message.role === 'assistant' ? (
                         <MessageRenderer
                           content={message.content}
-                          chartData={message.chart_data}  // Pass chart data from API response
+                          chartData={message.chartData}  // Pass chart data from API response (camelCase after transformation)
                           onCopy={copyMessage}
                           isEnhanced={message.isEnhanced || true} // Use enhanced rendering for all AI messages
                         />

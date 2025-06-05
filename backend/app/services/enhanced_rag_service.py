@@ -693,6 +693,14 @@ class EnhancedRAGService:
                     # Apply post-processing formatting
                     formatted_answer = self._apply_post_formatting(answer, response_format)
 
+                    # Extract chart data if response format is chart
+                    chart_data = None
+                    if response_format == 'chart':
+                        chart_data = self._extract_chart_data_from_answer(formatted_answer)
+                        # For chart responses, set content to empty if we have chart data
+                        if chart_data:
+                            formatted_answer = ""
+
                     # Calculate cost (approximate)
                     usage = result.get("usage", {})
                     total_tokens = usage.get("total_tokens", 0)
@@ -701,7 +709,8 @@ class EnhancedRAGService:
                     return RAGQueryResponse(
                         answer=formatted_answer,
                         generation_cost=cost,
-                        source_documents=[]  # Will be populated by caller
+                        source_documents=[],  # Will be populated by caller
+                        chart_data=chart_data
                     )
                 else:
                     error_msg = f"Azure OpenAI API error: {response.status_code}"
@@ -953,6 +962,34 @@ Please provide a well-formatted, helpful response based only on the available da
         except (json.JSONDecodeError, KeyError, TypeError):
             # If JSON parsing fails, return original answer
             return answer
+
+    def _extract_chart_data_from_answer(self, answer: str) -> Optional[Dict[str, Any]]:
+        """Extract chart data from the answer and return as a dictionary."""
+        import json
+        import re
+
+        try:
+            # Extract JSON from the response
+            json_match = re.search(r'```json\s*(\{.*?\})\s*```', answer, re.DOTALL)
+            if json_match:
+                json_str = json_match.group(1)
+                chart_data = json.loads(json_str)
+
+                # Validate required fields
+                required_fields = ['chart_type', 'title', 'data']
+                if all(field in chart_data for field in required_fields):
+                    # Ensure proper structure
+                    if 'labels' not in chart_data['data'] and 'values' in chart_data['data']:
+                        # Generate labels if missing
+                        values = chart_data['data']['values']
+                        chart_data['data']['labels'] = [f"Item {i+1}" for i in range(len(values))]
+
+                    return chart_data
+
+            return None
+
+        except (json.JSONDecodeError, KeyError, TypeError):
+            return None
 
     # Formatter methods (placeholders for the response_formatters dict)
     def _format_as_table(self, data: List[Dict[str, Any]]) -> str:
