@@ -7,7 +7,7 @@ import httpx
 import asyncio
 from math import ceil
 
-from ..scraper_modules.assets import AZURE_EMBEDDING_MODEL, AZURE_CHAT_MODEL # Corrected path
+from ..scraper_modules.assets import AZURE_EMBEDDING_MODEL # Corrected path
 from ..config import settings
 
 async def generate_embeddings(text: str, azure_credentials: Optional[Dict[str, str]] = None) -> List[float]:
@@ -26,7 +26,7 @@ async def generate_embeddings(text: str, azure_credentials: Optional[Dict[str, s
     """
     if not azure_credentials or 'api_key' not in azure_credentials or 'endpoint' not in azure_credentials:
         # In a production environment, we should log this properly
-        print("Error: Azure OpenAI credentials missing or incomplete")
+        # Consider raising a ValueError or logging an error here
         # Return a random embedding for development purposes
         # In production, this should raise an exception
         return list(np.random.rand(1536))  # Azure OpenAI text-embedding-ada-002 has 1536 dimensions
@@ -77,7 +77,6 @@ async def generate_embeddings(text: str, azure_credentials: Optional[Dict[str, s
             return embedding
     except Exception as e:
         # Log the error
-        print(f"Error generating embedding: {e}")
         # Return a random embedding as fallback for development
         return list(np.random.rand(1536))
 
@@ -145,7 +144,7 @@ async def generate_embeddings_batch(texts: List[str], azure_credentials: Optiona
             return embeddings
     except Exception as e:
         # Log the error
-        print(f"Error generating batch embeddings: {e}")
+        # Consider logging an error here
         # Return random embeddings as fallback for development
         return [list(np.random.rand(1536)) for _ in texts]
 
@@ -165,7 +164,8 @@ async def process_chunks_with_batching(chunks: List[str], azure_credentials: Dic
     num_batches = ceil(num_chunks / batch_size)
     all_embeddings = []
 
-    print(f"Processing {num_chunks} chunks in {num_batches} batches (batch size: {batch_size})")
+    # Consider logging this information
+    # logger.info(f"Processing {num_chunks} chunks in {num_batches} batches (batch size: {batch_size})")
 
     for i in range(num_batches):
         start_idx = i * batch_size

@@ -1,0 +1,365 @@
+\documentclass[12pt,a4paper]{report}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{listings}
+\usepackage{xcolor}
+\usepackage{hyperref}
+\usepackage{amsmath}
+\usepackage{amssymb}
+\usepackage{geometry}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{float}
+\usepackage{booktabs}
+\usepackage{multirow}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+
+% Page geometry
+\geometry{
+    a4paper,
+    margin=2.5cm
+}
+
+% Hyperref settings
+\hypersetup{
+    colorlinks=true,
+    linkcolor=blue,
+    filecolor=magenta,
+    urlcolor=cyan,
+    pdftitle={DeepCrawl AI Documentation},
+    pdfauthor={Mohab Haedarea, Abd-Alrahman AbuLail, Ahd Kalboneh},
+    pdfsubject={Technical Documentation},
+    pdfkeywords={AI, Web Crawling, Machine Learning}
+}
+
+% Title formatting
+\titleformat{\chapter}[display]
+    {\normalfont\huge\bfseries}{\chaptertitlename\ \thechapter}{20pt}{\Huge}
+\titlespacing*{\chapter}{0pt}{0pt}{20pt}
+
+% Code listing settings
+\lstset{
+    basicstyle=\ttfamily\small,
+    breaklines=true,
+    frame=single,
+    numbers=left,
+    numberstyle=\tiny,
+    keywordstyle=\color{blue},
+    commentstyle=\color{green!60!black},
+    stringstyle=\color{red},
+    showstringspaces=false
+}
+
+\begin{document}
+
+% Title Page
+\begin{titlepage}
+    \centering
+    \vspace*{2cm}
+    {\Huge\bfseries DeepCrawl AI\par}
+    \vspace{1cm}
+    {\Large Technical Documentation\par}
+    \vspace{2cm}
+    {\Large\itshape Team Members\par}
+    \vspace{0.5cm}
+    {\large Mohab Haedarea\par}
+    {\large Abd-Alrahman AbuLail\par}
+    {\large Ahd Kalboneh\par}
+    \vspace{1cm}
+    {\large Supervisor\par}
+    {\large Dr. Mai Kanaan\par}
+    \vfill
+    {\large \today\par}
+\end{titlepage}
+
+% Table of Contents
+\tableofcontents
+\newpage
+
+% Abstract
+\chapter*{Abstract}
+DeepCrawl AI represents a groundbreaking advancement in web crawling technology, combining sophisticated artificial intelligence capabilities with robust web scraping techniques. This project addresses the limitations of traditional web crawlers by implementing advanced machine learning algorithms for intelligent content processing, pattern recognition, and data analysis. The system is designed to handle modern web complexities while maintaining high performance and scalability.
+
+% Chapter 1: Introduction
+\chapter{Introduction}
+\section{Introduction}
+DeepCrawl AI is a comprehensive web crawling and analysis system developed by a team of dedicated students under the supervision of Dr. Mai Kanaan. The project aims to revolutionize web data extraction by incorporating artificial intelligence and machine learning capabilities into traditional web crawling processes.
+
+\subsection{Project Background}
+The project emerged from the need to address several challenges in modern web crawling:
+\begin{itemize}
+    \item Increasing complexity of web content
+    \item Growing volume of dynamic content
+    \item Need for intelligent content understanding
+    \item Demand for real-time processing
+    \item Requirement for scalable solutions
+\end{itemize}
+
+\section{Project Scope}
+\subsection{Core Components}
+\begin{enumerate}
+    \item Web Crawling Engine
+    \begin{itemize}
+        \item Intelligent content extraction
+        \item Dynamic content handling
+        \item Rate limiting and politeness
+        \item Proxy management
+        \item Session handling
+    \end{itemize}
+    
+    \item AI Processing Pipeline
+    \begin{itemize}
+        \item Natural Language Processing
+        \item Content classification
+        \item Pattern recognition
+        \item Sentiment analysis
+        \item Entity extraction
+    \end{itemize}
+\end{enumerate}
+
+\section{Problem Specification}
+\subsection{Current Challenges}
+\begin{enumerate}
+    \item Technical Challenges
+    \begin{itemize}
+        \item Complex web structures
+        \item Dynamic content loading
+        \item Anti-bot measures
+        \item Rate limiting
+        \item Resource constraints
+    \end{itemize}
+    
+    \item Functional Challenges
+    \begin{itemize}
+        \item Content understanding
+        \item Data accuracy
+        \item Processing speed
+        \item Scalability
+        \item Maintenance
+    \end{itemize}
+\end{enumerate}
+
+% Chapter 2: Literature and Methodology
+\chapter{Literature and Methodology}
+\section{Introduction}
+This chapter examines existing web crawling solutions and methodologies, analyzing their strengths and limitations to inform the development of DeepCrawl AI.
+
+\section{Current Systems}
+\subsection{Traditional Web Crawlers}
+\subsubsection{Advantages}
+\begin{itemize}
+    \item Simple implementation
+    \item Low resource requirements
+    \item Wide compatibility
+    \item Easy maintenance
+    \item Basic functionality
+\end{itemize}
+
+\subsubsection{Disadvantages}
+\begin{itemize}
+    \item Limited intelligence
+    \item Poor dynamic handling
+    \item No context understanding
+    \item Basic pattern recognition
+    \item Limited scalability
+\end{itemize}
+
+% Chapter 3: System Design and Implementation
+\chapter{System Design and Implementation}
+\section{System Architecture}
+\subsection{High-Level Architecture}
+\begin{figure}[H]
+    \centering
+    \begin{lstlisting}[language=TeX]
+    [User Interface] → [API Gateway] → [Crawling Engine] → [AI Processor] → [Database]
+    \end{lstlisting}
+    \caption{System Architecture Diagram}
+\end{figure}
+
+\section{Database Design}
+\subsection{Schema Design}
+\begin{lstlisting}[language=SQL]
+CREATE TABLE users (
+    id UUID PRIMARY KEY,
+    username VARCHAR(255) NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+
+CREATE TABLE crawls (
+    id UUID PRIMARY KEY,
+    user_id UUID REFERENCES users(id),
+    target_url VARCHAR(255) NOT NULL,
+    status VARCHAR(50) NOT NULL,
+    parameters JSONB,
+    started_at TIMESTAMP,
+    completed_at TIMESTAMP,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+\end{lstlisting}
+
+% Chapter 4: Testing and Quality Assurance
+\chapter{Testing and Quality Assurance}
+\section{Testing Strategy}
+\subsection{Test Levels}
+\begin{enumerate}
+    \item Unit Testing
+    \begin{itemize}
+        \item Component testing
+        \item Function testing
+        \item Class testing
+        \item Module testing
+        \item Integration testing
+    \end{itemize}
+    
+    \item System Testing
+    \begin{itemize}
+        \item Functional testing
+        \item Performance testing
+        \item Security testing
+        \item Usability testing
+        \item Compatibility testing
+    \end{itemize}
+\end{enumerate}
+
+% Chapter 5: Deployment and Maintenance
+\chapter{Deployment and Maintenance}
+\section{Deployment Strategy}
+\subsection{Infrastructure Setup}
+\begin{enumerate}
+    \item Cloud Infrastructure
+    \begin{itemize}
+        \item AWS/Azure/GCP setup
+        \item Container orchestration
+        \item Load balancing
+        \item Auto-scaling
+        \item Monitoring
+    \end{itemize}
+    
+    \item Database Setup
+    \begin{itemize}
+        \item Database provisioning
+        \item Schema deployment
+        \item Data migration
+        \item Backup configuration
+        \item Security setup
+    \end{itemize}
+\end{enumerate}
+
+% Chapter 6: User Guide
+\chapter{User Guide}
+\section{Installation Guide}
+\subsection{System Requirements}
+\begin{enumerate}
+    \item Hardware Requirements
+    \begin{itemize}
+        \item CPU: 4+ cores
+        \item RAM: 8GB+
+        \item Storage: 50GB+
+        \item Network: 100Mbps+
+    \end{itemize}
+    
+    \item Software Requirements
+    \begin{itemize}
+        \item Operating System: Linux/Windows/MacOS
+        \item Python 3.8+
+        \item Node.js 14+
+        \item Docker
+        \item PostgreSQL 12+
+    \end{itemize}
+\end{enumerate}
+
+% Chapter 7: Future Enhancements
+\chapter{Future Enhancements}
+\section{Planned Features}
+\subsection{AI Enhancements}
+\begin{enumerate}
+    \item Model Improvements
+    \begin{itemize}
+        \item Advanced algorithms
+        \item Better accuracy
+        \item Faster processing
+        \item More features
+        \item Better training
+    \end{itemize}
+    
+    \item New Capabilities
+    \begin{itemize}
+        \item Image analysis
+        \item Video processing
+        \item Audio analysis
+        \item Multi-language support
+        \item Custom models
+    \end{itemize}
+\end{enumerate}
+
+% Appendices
+\appendix
+\chapter{API Documentation}
+\section{Authentication}
+\begin{lstlisting}[language=JSON]
+{
+    "type": "Bearer",
+    "in": "header",
+    "name": "Authorization",
+    "description": "JWT token for authentication"
+}
+\end{lstlisting}
+
+\chapter{Database Schema}
+\section{Tables}
+\begin{lstlisting}[language=SQL]
+CREATE TABLE users (
+    id UUID PRIMARY KEY,
+    username VARCHAR(255) NOT NULL,
+    email VARCHAR(255) UNIQUE NOT NULL,
+    password_hash VARCHAR(255) NOT NULL,
+    created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+    updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+);
+\end{lstlisting}
+
+\chapter{Configuration Files}
+\section{Backend Configuration}
+\begin{lstlisting}[language=YAML]
+database:
+  host: localhost
+  port: 5432
+  name: deepcrawl
+  user: admin
+  password: secret
+
+crawling:
+  max_depth: 3
+  max_pages: 1000
+  timeout: 30
+  retry_count: 3
+\end{lstlisting}
+
+\chapter{Error Codes}
+\section{System Errors}
+\begin{enumerate}
+    \item Authentication Errors
+    \begin{itemize}
+        \item 1001: Invalid credentials
+        \item 1002: Token expired
+        \item 1003: Invalid token
+        \item 1004: Access denied
+        \item 1005: Session expired
+    \end{itemize}
+\end{enumerate}
+
+\chapter{Glossary}
+\section{Technical Terms}
+\begin{description}
+    \item[AI/ML] Artificial Intelligence and Machine Learning
+    \item[Web Crawling] Automated process of extracting data from websites
+    \item[Microservices] Architectural style that structures an application as a collection of services
+    \item[Containerization] OS-level virtualization method for running multiple isolated systems
+    \item[Load Balancing] Distribution of workloads across multiple computing resources
+\end{description}
+
+\end{document} 

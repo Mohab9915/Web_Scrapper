@@ -3,7 +3,7 @@ Service for project URL management.
 """
 from typing import List, Optional
 from uuid import UUID
-from fastapi import Depends, HTTPException
+from fastapi import HTTPException
 
 from ..database import supabase
 from ..models.project_url import ProjectUrlCreate, ProjectUrlUpdate, ProjectUrlResponse
@@ -127,7 +127,7 @@ class ProjectUrlService:
         for session in sessions_response.data:
             unique_scrape_identifier = session.get("unique_scrape_identifier")
             if unique_scrape_identifier:
-                print(f"Deleting RAG data for unique_scrape_identifier: {unique_scrape_identifier}")
+                # Optionally, log this action
                 # Delete associated embeddings
                 supabase.table("embeddings").delete().eq("unique_name", unique_scrape_identifier).execute()
                 # Delete associated markdown

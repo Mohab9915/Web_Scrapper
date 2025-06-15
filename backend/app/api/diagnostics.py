@@ -1,7 +1,7 @@
 """
 Diagnostic endpoints for system status and troubleshooting.
 """
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter
 from typing import Dict, Any
 
 # Import the system resource checker

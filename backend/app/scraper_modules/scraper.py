@@ -3,14 +3,11 @@
 import json
 from typing import List
 from pydantic import BaseModel, create_model
-from .assets import (AZURE_CHAT_MODEL,SYSTEM_MESSAGE,generate_user_focused_system_message)
+from .assets import (SYSTEM_MESSAGE,generate_user_focused_system_message)
 from .llm_calls import (call_llm_model)
 from .markdown import read_raw_data
-# from .api_management import get_supabase_client # No longer needed for supabase client here
 from ..database import supabase # Use the app's global supabase client
-from .utils import  generate_unique_name
 
-# supabase = get_supabase_client() # Removed: Use imported supabase client
 
 def create_dynamic_listing_model(field_names: List[str]):
     field_definitions = {field: (str, ...) for field in field_names}
@@ -102,7 +99,8 @@ def scrape_urls(unique_names: List[str], fields: List[str], selected_model: str)
         # Generate the specific system message that includes the schema for DynamicListingModel within the "listings" structure
         # Pass the fields to prioritize user-specified conditions
         specific_system_message = generate_system_message(DynamicListingModel, fields)
-        parsed, token_counts, cost = call_llm_model(raw_data, DynamicListingsContainer, selected_model, specific_system_message)
+        # Set use_model_max_tokens_if_none=True to ensure we have enough tokens for large datasets (e.g., 250 countries)
+        parsed, token_counts, cost = call_llm_model(raw_data, DynamicListingsContainer, selected_model, specific_system_message, use_model_max_tokens_if_none=True)
 
         current_result_entry = {
             "unique_name": uniq,
@@ -116,10 +114,10 @@ def scrape_urls(unique_names: List[str], fields: List[str], selected_model: str)
             try:
                 save_formatted_data(uniq, parsed)
             except Exception as e:
-                print(f"Error saving formatted data for {uniq}: {e}")
+                # Optionally, log this error
                 current_result_entry["save_error"] = f"Failed to save formatted data: {str(e)}"
         else:
-            print(f"Warning: LLM call for {uniq} returned None or failed parsing. Skipping save_formatted_data.")
+            # Optionally, log this warning
             current_result_entry["llm_error"] = "LLM returned None or failed to parse"
             # Keep current_result_entry["parsed_data"] as None, or set to an error dict
             current_result_entry["parsed_data"] = {"error": "LLM returned None or failed to parse"} # Match previous behavior for this field on LLM error

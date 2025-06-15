@@ -1,10 +1,11 @@
 """
 Service for generating conversation titles using Azure OpenAI.
 """
-import os
 from typing import Optional
 from openai import AsyncAzureOpenAI
 import logging
+
+from ..config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -13,10 +14,10 @@ class TitleGenerationService:
     
     def __init__(self):
         """Initialize the title generation service with Azure OpenAI credentials."""
-        self.azure_endpoint = os.getenv("AZURE_OPENAI_ENDPOINT")
-        self.azure_api_key = os.getenv("AZURE_OPENAI_API_KEY")
-        self.azure_api_version = os.getenv("AZURE_OPENAI_API_VERSION", "2024-02-15-preview")
-        self.chat_model = os.getenv("AZURE_CHAT_MODEL", "gpt-4o")
+        self.azure_endpoint = settings.AZURE_OPENAI_ENDPOINT
+        self.azure_api_key = settings.AZURE_OPENAI_API_KEY
+        self.azure_api_version = settings.AZURE_OPENAI_API_VERSION or "2024-02-15-preview"
+        self.chat_model = settings.AZURE_CHAT_MODEL or "gpt-4o"
         
         if not self.azure_endpoint or not self.azure_api_key:
             logger.warning("Azure OpenAI credentials not found. Title generation will be disabled.")

@@ -401,7 +401,7 @@ async def extract_structured_data_with_llm(
             )
 
             if response.status_code != 200:
-                print(f"Error from Azure OpenAI API: {response.status_code} - {response.text}")
+                # Consider logging this error
                 return []
 
             # Extract the response content
@@ -431,15 +431,14 @@ async def extract_structured_data_with_llm(
 
                         return normalized_data
                     else:
-                        print("Error: LLM response is not a list")
+                        # Consider logging this error
                         return []
                 else:
-                    print("Error: Could not find JSON array in LLM response")
+                    # Consider logging this error
                     return []
             except json.JSONDecodeError as e:
-                print(f"Error parsing JSON from LLM response: {e}")
-                print(f"Response content: {content}")
+                # Consider logging this error and the content
                 return []
     except Exception as e:
-        print(f"Error calling Azure OpenAI API: {e}")
+        # Consider logging this error
         return []

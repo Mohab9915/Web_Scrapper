@@ -12,10 +12,11 @@ MODELS_USED = {
     AZURE_CHAT_MODEL: {"AZURE_OPENAI_API_KEY"},
 }
 
-# Timeout settings for web scraping
+# Timeout settings for web scraping - increased for reliable scraping
 TIMEOUT_SETTINGS = {
-    "page_load": 30,
-    "script": 10
+    "page_load": 300,  # 5 minutes for page load
+    "script": 120,     # 2 minutes for script execution
+    "request": 600     # 10 minutes total request timeout
 }
 
 NUMBER_SCROLL=2

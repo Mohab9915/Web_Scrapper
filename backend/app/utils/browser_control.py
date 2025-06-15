@@ -4,7 +4,6 @@ Utility functions for browser control.
 import uuid
 import asyncio
 from typing import Tuple
-import os
 from dotenv import load_dotenv
 
 load_dotenv()

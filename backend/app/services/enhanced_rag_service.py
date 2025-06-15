@@ -5,7 +5,6 @@ import json
 import re
 import httpx
 import numpy as np
-import os
 from typing import Dict, List, Optional, Any, Tuple, Union
 from uuid import UUID, uuid4
 from datetime import datetime
@@ -14,7 +13,7 @@ import logging
 from fastapi import HTTPException
 from ..database import supabase
 from ..models.chat import RAGQueryResponse, ChatMessageResponse
-# Remove the import since these constants don't exist in config
+from ..config import settings
 
 logger = logging.getLogger(__name__)
 
@@ -307,11 +306,11 @@ class EnhancedRAGService:
         Returns:
             RAGQueryResponse: Enhanced formatted response
         """
-        # Get Azure OpenAI credentials from environment variables
+        # Get Azure OpenAI credentials from settings
         azure_credentials = {
-            "api_key": os.getenv("AZURE_OPENAI_API_KEY"),
-            "endpoint": os.getenv("AZURE_OPENAI_ENDPOINT"),
-            "api_version": os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
+            "api_key": settings.AZURE_OPENAI_API_KEY,
+            "endpoint": settings.AZURE_OPENAI_ENDPOINT,
+            "api_version": settings.AZURE_OPENAI_API_VERSION or "2024-12-01-preview"
         }
 
         if not azure_credentials["api_key"] or not azure_credentials["endpoint"]:
@@ -553,73 +552,90 @@ class EnhancedRAGService:
             return 'conversational'
 
     def _extract_enhanced_keywords(self, query: str) -> List[str]:
-        """Extract enhanced keywords from query."""
-        # Remove common stop words and extract meaningful terms
+        """Extract enhanced keywords from query using NLP techniques."""
+        # Remove common stop words
         stop_words = {'the', 'a', 'an', 'and', 'or', 'but', 'in', 'on', 'at', 'to', 'for', 'of', 'with', 'by', 'is', 'are', 'was', 'were', 'be', 'been', 'have', 'has', 'had', 'do', 'does', 'did', 'will', 'would', 'could', 'should', 'may', 'might', 'can', 'what', 'how', 'when', 'where', 'why', 'who', 'tell', 'me', 'about'}
-
+        
         # Extract words and filter
         words = re.findall(r'\b\w+\b', query.lower())
         keywords = [word for word in words if word not in stop_words and len(word) > 2]
-
-        # Add phrase extraction for better matching
-        phrases = []
-        if 'price' in query.lower():
-            phrases.extend(['price', 'cost', 'pricing'])
-        if 'product' in query.lower():
-            phrases.extend(['product', 'item'])
-        if 'description' in query.lower():
-            phrases.extend(['description', 'details'])
-
-        # Add country-specific terms
-        if any(word in query.lower() for word in ['country', 'countries', 'nation', 'capital', 'population', 'area']):
-            phrases.extend(['capital', 'population', 'area', 'country'])
-
-        # Preserve important proper nouns (country names, etc.)
+        
+        # Extract named entities (proper nouns) dynamically
         proper_nouns = re.findall(r'\b[A-Z][a-z]+\b', query)
         keywords.extend([noun.lower() for noun in proper_nouns])
+        
+        # Extract phrases using NLP techniques
+        phrases = self._extract_phrases(query)
+        keywords.extend(phrases)
+        
+        return list(set(keywords))
 
-        return list(set(keywords + phrases))
+    def _extract_phrases(self, query: str) -> List[str]:
+        """Extract meaningful phrases from query using NLP techniques."""
+        phrases = []
+        
+        # Split query into words
+        words = query.lower().split()
+        
+        # Extract 2-word phrases
+        for i in range(len(words) - 1):
+            if len(words[i]) > 2 and len(words[i+1]) > 2:  # Avoid very short words
+                phrases.append(f"{words[i]} {words[i+1]}")
+        
+        # Extract 3-word phrases
+        for i in range(len(words) - 2):
+            if all(len(word) > 2 for word in words[i:i+3]):
+                phrases.append(f"{words[i]} {words[i+1]} {words[i+2]}")
+        
+        return phrases
 
     def _calculate_relevance_score(self, content: str, keywords: List[str], query: str) -> float:
-        """Calculate relevance score for content."""
+        """Calculate relevance score using dynamic weighting."""
         content_lower = content.lower()
         query_lower = query.lower()
-
+        
         score = 0.0
-
-        # Keyword matching with higher weight for important terms
+        
+        # Base keyword matching
         for keyword in keywords:
             if keyword in content_lower:
-                # Give higher weight to country names and specific terms
-                if keyword in ['russia', 'china', 'usa', 'india', 'brazil', 'canada', 'australia', 'germany', 'france', 'japan']:
-                    score += 5.0  # High weight for country names
-                elif keyword in ['capital', 'population', 'area', 'country']:
-                    score += 2.0  # Medium weight for country attributes
-                else:
-                    score += 1.0  # Normal weight
-
-        # Phrase matching (higher weight)
+                # Calculate term frequency
+                term_freq = content_lower.count(keyword)
+                # Calculate term weight
+                weight = self._calculate_term_weight(keyword)
+                score += (term_freq * weight)
+        
+        # Phrase matching with dynamic weights
         if len(keywords) > 1:
             for i in range(len(keywords) - 1):
                 phrase = f"{keywords[i]} {keywords[i+1]}"
                 if phrase in content_lower:
-                    score += 3.0
-
+                    score += 3.0  # Higher weight for phrase matches
+        
         # Exact query matching (highest weight)
         if query_lower in content_lower:
             score += 10.0
-
-        # Country section matching (look for ### CountryName pattern)
-        import re
-        country_pattern = r'###\s*([^#\n]+)'
-        matches = re.findall(country_pattern, content, re.IGNORECASE)
-        for match in matches:
-            if any(keyword in match.lower() for keyword in keywords):
-                score += 8.0  # Very high weight for country section headers
-
-        # Normalize by content length (but don't make it too small)
+        
+        # Normalize by content length
         content_length = max(len(content.split()), 10)
         return score / (content_length / 100)
+
+    def _calculate_term_weight(self, term: str) -> float:
+        """Calculate dynamic term weight based on various factors."""
+        weight = 1.0
+        
+        # Consider term length
+        weight += len(term) * 0.1
+        
+        # Consider if term is a proper noun
+        if term[0].isupper():
+            weight += 0.5
+        
+        # Consider if term is a number
+        if term.isdigit():
+            weight += 0.3
+        
+        return weight
 
     def _build_enhanced_context(self, chunks: List[Dict[str, Any]], intent: Dict[str, Any]) -> str:
         """Build enhanced context based on query intent."""
@@ -695,11 +711,18 @@ class EnhancedRAGService:
 
                     # Extract chart data if response format is chart
                     chart_data = None
+                    chart_error = None
                     if response_format == 'chart':
                         chart_data = self._extract_chart_data_from_answer(formatted_answer)
                         # For chart responses, set content to empty if we have chart data
                         if chart_data:
                             formatted_answer = ""
+                        else:
+                            chart_error = "Chart generation failed: LLM did not return a valid chart JSON."
+                            formatted_answer = chart_error
+                            # Log the raw answer for debugging
+                            import logging
+                            logging.error(f"Chart request failed. Raw LLM answer: {answer}")
 
                     # Calculate cost (approximate)
                     usage = result.get("usage", {})

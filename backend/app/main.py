@@ -1,11 +1,15 @@
 """
 FastAPI application entry point.
 """
+# Load environment variables first, before any other imports
+from dotenv import load_dotenv
+load_dotenv()
+
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 
-from .api import projects, scraping, rag, websockets, cache, project_urls, history, project_settings, auth
+from .api import projects, scraping, rag, websockets, project_urls, history, project_settings, auth
 from .config import settings
 from .services.scraping_service import ScrapingService
 from uuid import UUID
@@ -23,19 +27,18 @@ app = FastAPI(
 )
 
 # Configure CORS
+# Browsers block credentialed requests (with cookies / Authorization header)
+# when `Access-Control-Allow-Origin` is set to `*`. Instead, we must return the
+# exact requesting origin. We read the allowed origins from the CORS_ORIGINS
+# env variable (comma-separated) defined in `.env`. If the variable is omitted
+# we fall back to the localhost dev ports so development still works.
+
+origins_env = settings.CORS_ORIGINS or "http://localhost:9002,http://localhost:3000"
+origins = [o.strip() for o in origins_env.split(",") if o.strip()]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:9002",
-        "http://localhost:9003",
-        "http://localhost:9004",
-        "https://scrapemaster-frontend-prod.whitemeadow-57a6711f.eastus.azurecontainerapps.io",
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:9002",
-        "http://127.0.0.1:9003",
-        "http://127.0.0.1:9004"
-    ],
+    allow_origins=origins,
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -47,7 +50,7 @@ app.include_router(projects.router, prefix=settings.API_V1_STR)
 app.include_router(scraping.router, prefix=settings.API_V1_STR)
 app.include_router(rag.router, prefix=settings.API_V1_STR)
 app.include_router(websockets.router, prefix=settings.API_V1_STR)
-app.include_router(cache.router, prefix=settings.API_V1_STR)
+# Cache functionality removed (was dependent on Firecrawl)
 app.include_router(project_urls.router, prefix=settings.API_V1_STR)
 app.include_router(history.router, prefix=settings.API_V1_STR)
 app.include_router(project_settings.router, prefix=settings.API_V1_STR, tags=["Project Settings"])

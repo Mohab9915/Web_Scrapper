@@ -15,15 +15,18 @@ const ChartRenderer = ({ chartData, className = "" }) => {
     };
   }, [JSON.stringify(chartData)]);
 
+  // Check if we have a Matplotlib-generated image
+  const hasImageData = useMemo(() => {
+    return !!memoizedChartData?.image_data;
+  }, [memoizedChartData]);
+
   useEffect(() => {
-    console.log('ChartRenderer: useEffect triggered', { 
-      chartType: memoizedChartData?.chartType || memoizedChartData?.chart_type,
-      hasCanvas: !!canvasRef.current,
-      chartData: memoizedChartData 
-    });
+    // If we have image data, don't try to render a Chart.js chart
+    if (hasImageData) {
+      return;
+    }
 
     if (!memoizedChartData || !canvasRef.current) {
-      console.log('ChartRenderer: Early return - no data or canvas');
       return;
     }
 
@@ -38,20 +41,8 @@ const ChartRenderer = ({ chartData, className = "" }) => {
     // Validate chart data structure (handle both chartType and chart_type)
     const chartType = memoizedChartData.chartType || memoizedChartData.chart_type;
     if (!memoizedChartData.data || !chartType) {
-      console.error('ChartRenderer: Invalid chart data structure:', {
-        error: 'Missing required fields',
-        hasData: !!memoizedChartData.data,
-        chartType: chartType,
-        receivedData: memoizedChartData
-      });
       return;
     }
-
-    console.log('ChartRenderer: Creating chart', { 
-      type: chartType, 
-      title: memoizedChartData.title,
-      dataKeys: Object.keys(memoizedChartData.data)
-    });
 
     try {
       const chartType = memoizedChartData.chartType || memoizedChartData.chart_type;
@@ -271,6 +262,26 @@ const ChartRenderer = ({ chartData, className = "" }) => {
     );
   }
 
+  // If we have image data from Matplotlib, render the image instead of using Chart.js
+  if (hasImageData) {
+    return (
+      <div className={`bg-gray-800 rounded-lg p-4 ${className}`}>
+        <h3 className="text-lg font-semibold text-purple-200 mb-3">{memoizedChartData.title}</h3>
+        <div className="h-64 md:h-80 flex items-center justify-center">
+          <img 
+            src={`data:image/png;base64,${memoizedChartData.image_data}`} 
+            alt={memoizedChartData.title || 'Chart'} 
+            className="max-h-full max-w-full object-contain"
+          />
+        </div>
+        {memoizedChartData.description && (
+          <p className="text-sm text-gray-400 mt-3">{memoizedChartData.description}</p>
+        )}
+      </div>
+    );
+  }
+
+  // Original Chart.js rendering
   return (
     <div className={`bg-gray-800 rounded-lg p-4 ${className}`}>
       <div className="h-64 md:h-80">

@@ -3,7 +3,6 @@ Service for project management.
 """
 from typing import List, Optional
 from uuid import UUID
-from fastapi import Depends
 
 from ..database import supabase
 from ..models.project import ProjectCreate, ProjectUpdate, ProjectResponse
@@ -130,11 +129,9 @@ class ProjectService:
 
         if not response.data:
             error_detail = getattr(response, 'error', 'Unknown error')
-            print(f"❌ Failed to create project. Error: {error_detail}")
             raise HTTPException(status_code=400, detail=f"Failed to create project: {error_detail}")
 
         project = response.data[0]
-        print(f"✅ Project created successfully: {project}")
         project["scraped_sessions_count"] = 0
         project["rag_status"] = "Disabled"
 

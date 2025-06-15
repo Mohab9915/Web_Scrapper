@@ -4,10 +4,13 @@ Service for RAG functionality.
 from typing import List, Dict, Any, Optional
 from uuid import UUID
 from fastapi import Depends, HTTPException
-import uuid
-import time
+import json
 import os
+import re
+import uuid
 from datetime import datetime
+from typing import Any, Dict, List, Optional, Tuple, Union
+
 
 from ..database import supabase
 from ..models.chat import ChatMessageResponse, ChatMessageCreate, ChatMessageRequest, RAGQueryRequest, RAGQueryResponse
@@ -21,7 +24,9 @@ from .title_generation_service import TitleGenerationService
 class RAGService:
     """Service for RAG functionality."""
 
-    def __init__(self):
+    def __init__(self, settings=None):
+        from ..config import settings as app_settings
+        self.settings = settings or app_settings
         self.chat_history_service = ChatHistoryService()
         self.title_generation_service = TitleGenerationService()
 
@@ -69,11 +74,11 @@ class RAGService:
         Raises:
             HTTPException: If project not found, RAG not enabled, no data available, or missing credentials
         """
-        # Get Azure OpenAI credentials from environment variables
+        # Get Azure OpenAI credentials from settings object instead of environment variables
         azure_credentials = {
-            "api_key": os.getenv("AZURE_OPENAI_API_KEY"),
-            "endpoint": os.getenv("AZURE_OPENAI_ENDPOINT"),
-            "api_version": os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
+            "api_key": self.settings.AZURE_OPENAI_API_KEY,
+            "endpoint": self.settings.AZURE_OPENAI_ENDPOINT,
+            "api_version": self.settings.AZURE_OPENAI_API_VERSION or "2024-12-01-preview"
         }
 
         if not azure_credentials["api_key"] or not azure_credentials["endpoint"]:
@@ -198,6 +203,40 @@ class RAGService:
         # Build context from matched chunks
         context_chunks = [chunk["content"] for chunk in rpc_response.data]
         context = "\n\n".join(context_chunks)
+
+        # If this is a chart request, try to extract tabular data and send as JSON in the context
+        tabular_data_json = None
+        if self._is_chart_request(query):
+            import json
+            import re
+            tabular_data = []
+            for chunk in rpc_response.data:
+                content = chunk["content"].strip()
+                # Try to parse JSON from chunk content if possible
+                try:
+                    # Heuristic: look for a JSON array in the chunk content
+                    if content.startswith("[") and content.endswith("]"):
+                        parsed = json.loads(content)
+                        if isinstance(parsed, list) and len(parsed) > 0 and isinstance(parsed[0], dict):
+                            tabular_data.extend(parsed)
+                    # Try to extract Python-style list after 'Listings:'
+                    elif content.lower().startswith("listings:"):
+                        # Extract the list part
+                        match = re.search(r"listings:\s*(\[.*\])", content, re.IGNORECASE | re.DOTALL)
+                        if match:
+                            list_str = match.group(1)
+                            # Convert single quotes to double quotes
+                            json_str = list_str.replace("'", '"')
+                            # Convert numbers in string to numbers (optional, safe for LLM)
+                            parsed = json.loads(json_str)
+                            if isinstance(parsed, list) and len(parsed) > 0 and isinstance(parsed[0], dict):
+                                tabular_data.extend(parsed)
+                except Exception:
+                    pass
+            # If we found tabular data, use it as JSON in the context
+            if tabular_data:
+                tabular_data_json = json.dumps(tabular_data, indent=2)
+                context = f"DATA (JSON):\n{tabular_data_json}\n\n" + context
 
         # Call Azure OpenAI API to generate a response
         try:
@@ -342,7 +381,7 @@ CONTEXT USAGE:
     ) -> ChatMessageResponse:
         """
         Post a new chat message and get a response using Azure OpenAI.
-
+        
         Args:
             project_id (UUID): Project ID
             content (str): Message content
@@ -351,15 +390,15 @@ CONTEXT USAGE:
 
         Returns:
             ChatMessageResponse: Response with assistant message
-
+            
         Raises:
             HTTPException: If Azure OpenAI credentials are missing
         """
-        # Get Azure OpenAI credentials from environment variables
+        # Get Azure OpenAI credentials from settings object
         azure_credentials = {
-            "api_key": os.getenv("AZURE_OPENAI_API_KEY"),
-            "endpoint": os.getenv("AZURE_OPENAI_ENDPOINT"),
-            "api_version": os.getenv("AZURE_OPENAI_API_VERSION", "2024-12-01-preview")
+            "api_key": self.settings.AZURE_OPENAI_API_KEY,
+            "endpoint": self.settings.AZURE_OPENAI_ENDPOINT,
+            "api_version": self.settings.AZURE_OPENAI_API_VERSION or "2024-12-01-preview"
         }
 
         if not azure_credentials["api_key"] or not azure_credentials["endpoint"]:
@@ -1227,135 +1266,47 @@ Generate ONLY the title, nothing else."""
     async def generate_chart_data(self, query: str, context: str, azure_credentials: Dict[str, str]) -> Dict[str, Any]:
         """
         Generate chart data and configuration based on the query and context.
+        Uses Matplotlib to generate charts instead of relying on LLM JSON generation.
 
         Args:
             query (str): User query requesting a chart
             context (str): Data context from RAG
-            azure_credentials (Dict[str, str]): Azure credentials
+            azure_credentials (Dict[str, str]): Azure credentials (not used in Matplotlib implementation)
 
         Returns:
-            Dict[str, Any]: Chart configuration and data
+            Dict[str, Any]: Chart configuration and data with base64 encoded image
         """
         try:
-            import httpx
-            import json
-
-            # Get Azure OpenAI credentials
-            api_key = azure_credentials['api_key']
-            endpoint = azure_credentials['endpoint']
-
-            # Always use the correct chat model
-            deployment_name = AZURE_CHAT_MODEL
-
-            # Determine the correct API endpoint format
-            if "services.ai.azure.com" in endpoint:
-                base_endpoint = endpoint.replace("/models", "")
-                url = f"{base_endpoint}/openai/deployments/{deployment_name}/chat/completions?api-version=2023-05-15"
-            else:
-                url = f"{endpoint}/openai/deployments/{deployment_name}/chat/completions?api-version=2023-05-15"
-
-            system_message = """You are an AI that generates chart configurations for data visualization.
-
-TASK: Analyze the provided data context and user query to create appropriate chart configurations.
-
-SUPPORTED CHART TYPES:
-1. "bar" - For comparing categories or items
-2. "pie" - For showing proportions/percentages
-3. "line" - For trends over time
-4. "table" - For detailed data display
-5. "stats" - For statistical summaries
-
-OUTPUT FORMAT: Return ONLY a valid JSON object with this structure:
-{
-  "chart_type": "bar|pie|line|table|stats",
-  "title": "Chart Title",
-  "data": {
-    "labels": ["Label1", "Label2", ...],
-    "values": [value1, value2, ...],
-    "datasets": [{"label": "Dataset Name", "data": [1,2,3], "backgroundColor": ["#4CAF50", "#2196F3", "#FFC107"]}]
-  },
-  "description": "Brief description of what the chart shows"
-}
-
-DATA EXTRACTION RULES:
-1. Look for product data with names and prices (e.g., "Dell Latitude 5580": "$1144.4")
-2. Extract numeric values from price strings (remove $ and convert to numbers)
-3. Use product names as labels and prices as values
-4. Always create charts when you find ANY numeric data
-5. For price data, use "bar" chart type by default
-6. Use colorful backgrounds: ["#4CAF50", "#2196F3", "#FFC107", "#FF5722", "#9C27B0"]
-
-EXAMPLES:
-Input: [{'name': 'Dell Latitude 5580', 'price': '$1144.4'}, {'name': 'iPhone', 'price': '$899.99'}]
-Output: {
-  "chart_type": "bar",
-  "title": "Product Prices",
-  "data": {
-    "labels": ["Dell Latitude 5580", "iPhone"],
-    "values": [1144.4, 899.99],
-    "datasets": [{"label": "Price in USD", "data": [1144.4, 899.99], "backgroundColor": ["#4CAF50", "#2196F3"]}]
-  },
-  "description": "Bar chart showing product prices in USD"
-}
-
-IMPORTANT: If you find ANY products with prices, ALWAYS create a chart. Do NOT return error messages for valid product data."""
-
-            messages_for_api = [
-                {"role": "system", "content": system_message},
-                {"role": "user", "content": f"USER QUERY: {query}\n\nDATA CONTEXT:\n{context}\n\nGenerate chart configuration:"}
-            ]
-
-            payload = {
-                "messages": messages_for_api,
-                "temperature": 0.1,  # Low temperature for consistent JSON
-                "top_p": 0.8,
-                "max_tokens": 1000
+            from .matplotlib_chart_generator import MatplotlibChartGenerator
+        
+            # Extract chart parameters from query
+            chart_params = MatplotlibChartGenerator.extract_chart_params(query)
+                
+            # Extract data from context
+            data_items = MatplotlibChartGenerator.extract_data_from_context(context)
+            
+            # Prepare data for chart generation
+            labels, values, title, description = MatplotlibChartGenerator.prepare_chart_data(data_items, chart_params)
+                    
+            # Generate chart image
+            chart_image_base64, chart_type = MatplotlibChartGenerator.generate_chart(labels, values, chart_params, title)
+                
+            if not chart_image_base64:
+                    return {"error": "Failed to generate chart - no data available"}
+            
+            # Return chart configuration with image
+            result = {
+                "chart_type": chart_type,
+                "title": title,
+                "description": description,
+                "image_data": chart_image_base64,
+                "data": {
+                    "labels": labels,
+                    "values": values
+                }
             }
-
-            async with httpx.AsyncClient() as client:
-                response = await client.post(
-                    url,
-                    json=payload,
-                    headers={
-                        "Content-Type": "application/json",
-                        "api-key": api_key
-                    }
-                )
-
-                if response.status_code != 200:
-                    print(f"Error generating chart data: {response.text}")
-                    return {"error": "Failed to generate chart"}
-
-                response_data = response.json()
-                chart_response = response_data.get("choices", [{}])[0].get("message", {}).get("content", "").strip()
-
-                # Try to parse the JSON response
-                try:
-                    # Clean up the response (remove markdown code blocks if present)
-                    if "```json" in chart_response:
-                        chart_response = chart_response.split("```json")[1].split("```")[0].strip()
-                    elif "```" in chart_response:
-                        chart_response = chart_response.split("```")[1].strip()
-
-                    chart_config = json.loads(chart_response)
-
-                    # Validate the chart configuration
-                    if "error" in chart_config:
-                        return chart_config
-
-                    required_fields = ["chart_type", "title", "data"]
-                    if not all(field in chart_config for field in required_fields):
-                        return {"error": "Invalid chart configuration generated"}
-
-                    return chart_config
-
-                except json.JSONDecodeError as e:
-                    print(f"Error parsing chart JSON: {e}")
-                    print(f"Raw response: {chart_response}")
-                    return {"error": "Failed to parse chart configuration"}
-
+            return result
         except Exception as e:
-            print(f"Error generating chart data: {e}")
             return {"error": f"Chart generation failed: {str(e)}"}
 
     def _is_chart_request(self, query: str) -> bool:

@@ -29,7 +29,7 @@ const MessageRenderer = memo(({ content, chartData, onCopy }) => {
       }
       return null;
     } catch (error) {
-      console.error('Error parsing chart data:', error);
+      // Error parsing chart data, return null
       return null;
     }
   }, []);
@@ -362,6 +362,15 @@ const MessageRenderer = memo(({ content, chartData, onCopy }) => {
     // Handle chart data first (highest priority)
     if (finalChartData) {
       return renderChartWithText(content || "", finalChartData);
+    }
+
+    // Show a warning if chart was requested but not generated
+    if (content && content.toLowerCase().includes('chart generation failed')) {
+      return (
+        <div className="bg-red-900/30 border border-red-600/30 rounded-lg p-4 text-red-200 my-4">
+          <strong>Chart could not be generated.</strong> The system could not extract valid chart data from your request. Please try rephrasing your question or ensure the data is suitable for charting.
+        </div>
+      );
     }
 
     // Handle empty content

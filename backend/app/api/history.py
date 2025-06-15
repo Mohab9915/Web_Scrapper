@@ -2,7 +2,6 @@
 API endpoints for scraping history management.
 """
 from fastapi import APIRouter, Depends, HTTPException, status
-from typing import List
 from uuid import UUID
 
 from ..services.scraping_service import ScrapingService

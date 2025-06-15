@@ -3,9 +3,6 @@ WebSocket connection manager for real-time updates.
 """
 from typing import Dict, List, Any
 from fastapi import WebSocket
-import json
-import asyncio
-from uuid import UUID
 
 class ConnectionManager:
     """

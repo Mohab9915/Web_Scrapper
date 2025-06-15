@@ -2,25 +2,48 @@
 
 import asyncio
 from typing import List
-# Removed: from .api_management import get_supabase_client
 from ..database import supabase # Import supabase client from the main app's database module
 from .utils import generate_unique_name
-from crawl4ai import AsyncWebCrawler
+from crawl4ai import AsyncWebCrawler, BrowserConfig
 
-# Removed: supabase = get_supabase_client() # Now using the imported supabase client directly
 
 async def get_fit_markdown_async(url: str) -> str:
     """
     Async function using crawl4ai's AsyncWebCrawler to produce the regular raw markdown.
     (Reverting from the 'fit' approach back to normal.)
     """
+    
+    # Configure browser without unsupported timeout arguments
+    config = BrowserConfig(
+        headless=True,
+        extra_args=[
+            "--no-sandbox",
+            "--disable-setuid-sandbox",
+            "--disable-dev-shm-usage",
+            "--disable-accelerated-2d-canvas",
+            "--no-first-run",
+            "--no-zygote",
+            "--single-process",
+            "--disable-gpu"
+        ]
+    )
 
-    async with AsyncWebCrawler() as crawler:
-        result = await crawler.arun(url=url)
-        if result.success:
-            return result.markdown
-        else:
-            return ""
+    try:
+        async with AsyncWebCrawler(config=config) as crawler:
+            # Use longer timeout for scraping operations
+            result = await crawler.arun(
+                url=url,
+                page_timeout=300000,  # 5 minutes page timeout
+                delay_before_return_html=3.0  # Wait 3 seconds for dynamic content
+            )
+            if result.success:
+                return result.markdown
+            else:
+                # Optionally, log this error to a file or logging service
+                return ""
+    except Exception as e:
+        # Optionally, log this error to a file or logging service
+        return ""
 
 
 def fetch_fit_markdown(url: str) -> str:
@@ -57,9 +80,7 @@ def save_raw_data(unique_name: str, url: str, raw_data: str) -> None:
         "url": url,
         "markdown": raw_data # Changed column name to match 'markdowns' table
     }, on_conflict="unique_name").execute() # Conflict on primary key unique_name
-    BLUE = "\033[34m"
-    RESET = "\033[0m"
-    print(f"{BLUE}INFO:Raw data stored for {unique_name}{RESET}")
+    # Optionally, log this information
 
 async def fetch_and_store_markdowns(urls: List[str]) -> List[str]: # Changed to async
     """
@@ -74,8 +95,6 @@ async def fetch_and_store_markdowns(urls: List[str]) -> List[str]: # Changed to 
 
     for url in urls:
         unique_name = generate_unique_name(url)
-        MAGENTA = "\033[35m"
-        RESET = "\033[0m"
         # check if we already have raw_data in supabase
         # read_raw_data is synchronous, needs to be called carefully in async context
         # For Supabase client, if it's synchronous, it might block.
@@ -84,11 +103,11 @@ async def fetch_and_store_markdowns(urls: List[str]) -> List[str]: # Changed to 
         # For now, let's assume read_raw_data and save_raw_data are quick enough or will be made async later if they block.
         raw_data = read_raw_data(unique_name) # This is sync
         if raw_data:
-            print(f"{MAGENTA}Found existing data in supabase for {url} => {unique_name}{RESET}")
+            pass # Optionally, log that existing data was found
         else:
             # fetch fit markdown
             fit_md = await get_fit_markdown_async(url) # Changed to await async version
-            print(fit_md)
+            # Optionally, log the fetched markdown if needed for debugging, but not in production
             save_raw_data(unique_name, url, fit_md) # This is sync
         unique_names.append(unique_name)
 

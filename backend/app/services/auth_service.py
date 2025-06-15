@@ -1,7 +1,6 @@
 """
 Authentication service using Supabase Auth.
 """
-import os
 from typing import Optional, Dict, Any
 from fastapi import HTTPException, status
 from supabase import Client

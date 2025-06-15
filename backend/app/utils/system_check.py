@@ -49,7 +49,7 @@ def check_system_resources() -> Dict[str, Any]:
         }
     except Exception as e:
         # If we can't check resources, assume they're sufficient but log the error
-        print(f"Error checking system resources: {str(e)}")
+        # Consider logging this error using the application's logger
         return {
             "has_sufficient_resources": True,
             "error": str(e)

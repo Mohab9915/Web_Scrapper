@@ -36,7 +36,6 @@ function InteractiveScrapeModal({ projectId, url, sessionId, onClose, onSuccess 
         onClose();
       }
     } catch (err) {
-      console.error('Error executing scrape:', err);
       setError(err.message || 'An error occurred while scraping the page');
     } finally {
       setLoading(false);

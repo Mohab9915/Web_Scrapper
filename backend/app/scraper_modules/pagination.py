@@ -5,8 +5,7 @@ from typing import List, Dict
 from .assets import PROMPT_PAGINATION
 from .markdown import read_raw_data
 from .api_management import get_supabase_client
-from pydantic import BaseModel, Field
-from typing import List
+from pydantic import BaseModel
 from pydantic import create_model
 from .llm_calls import (call_llm_model)
 
@@ -61,17 +60,16 @@ def save_pagination_data(unique_name: str, pagination_data):
             "pagination_data": json.dumps(pagination_data) if pagination_data else None
         }).eq("unique_scrape_identifier", unique_name).execute()
     except Exception as e:
-        print(f"Warning: Could not save pagination data for {unique_name}: {e}")
+        # Optionally, log this warning
         # Fallback: try to find by id if unique_scrape_identifier doesn't work
         try:
             supabase.table("scrape_sessions").update({
                 "pagination_data": json.dumps(pagination_data) if pagination_data else None
             }).eq("id", unique_name).execute()
         except Exception as e2:
-            print(f"Error: Could not save pagination data for {unique_name}: {e2}")
-    MAGENTA = "\033[35m"
-    RESET = "\033[0m" 
-    print(f"{MAGENTA}INFO:Pagination data saved for {unique_name}{RESET}")
+            # Optionally, log this error
+            pass
+    # Optionally, log this information
 
 def paginate_urls(unique_names: List[str], selected_model: str, indication: str, urls:List[str]):
     """
@@ -86,7 +84,7 @@ def paginate_urls(unique_names: List[str], selected_model: str, indication: str,
     for uniq,current_url in zip(unique_names, urls):
         raw_data = read_raw_data(uniq)
         if not raw_data:
-            print(f"No raw_data found for {uniq}, skipping pagination.")
+            # Optionally, log this event
             continue
         response_schema=get_pagination_response_format()
         full_indication=build_pagination_prompt(indication,current_url)

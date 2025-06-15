@@ -2,7 +2,6 @@
 Configuration settings for the application.
 """
 import os
-from typing import List
 from pydantic_settings import BaseSettings
 from dotenv import load_dotenv
 
@@ -14,8 +13,9 @@ class Settings(BaseSettings):
     # API settings
     API_V1_STR: str = "/api/v1"
 
-    # CORS settings
-    CORS_ORIGINS: str = "*"  # Allow all origins for now to fix CORS issue
+    # CORS settings (comma-separated list, e.g. "http://localhost:9002,http://localhost:3000").
+    # Leave empty to let `main.py` fall back to sensible dev defaults.
+    CORS_ORIGINS: str = os.getenv("CORS_ORIGINS", "")
 
     # Supabase settings
     SUPABASE_URL: str = os.getenv("SUPABASE_URL", "")
@@ -29,8 +29,13 @@ class Settings(BaseSettings):
     EMBEDDING_BATCH_SIZE: int = int(os.getenv("EMBEDDING_BATCH_SIZE", "20"))  # Number of chunks to process in a single API call
     WEB_CACHE_EXPIRY_HOURS: int = int(os.getenv("WEB_CACHE_EXPIRY_HOURS", "24"))  # Cache expiry time in hours
 
-    # Firecrawl API settings
-    FIRECRAWL_API_KEY: str = os.getenv("FIRECRAWL_API_KEY", "")
+    # Timeout settings
+    SCRAPING_TIMEOUT: int = int(os.getenv("SCRAPING_TIMEOUT", "600"))  # 10 minutes default
+    PAGE_LOAD_TIMEOUT: int = int(os.getenv("PAGE_LOAD_TIMEOUT", "300"))  # 5 minutes default
+    SCRIPT_TIMEOUT: int = int(os.getenv("SCRIPT_TIMEOUT", "120"))  # 2 minutes default
+
+    # Web scraping settings (using Crawl4AI)
+    # No API key needed for Crawl4AI as it runs locally
     
     # Azure OpenAI settings
     AZURE_OPENAI_ENDPOINT: str = os.getenv("AZURE_OPENAI_ENDPOINT", "")
@@ -47,5 +52,6 @@ class Settings(BaseSettings):
     class Config:
         env_file = ".env"
         case_sensitive = True
+        extra = "ignore"  # Allow extra environment variables (e.g., REACT_APP_* for frontend)
 
 settings = Settings()

@@ -9,6 +9,7 @@ import ProjectsPanel from './ProjectsPanel';
 import RagPromptModal from './RagPromptModal';
 import ConfirmationModal from './ConfirmationModal';
 import RagManagement from './components/RagManagement';
+import { supabase } from './lib/supabase';
 import { executeScrape, sendChatMessage, getProjectConversations, createConversation, deleteConversation, getConversationMessages, queryEnhancedRagApi, getProjects, createProject, deleteProject, getScrapedSessions, updateProjectRAGStatus, API_URL } from './lib/api';
 import { useToast } from './components/Toast';
 import { useAuth } from './contexts/AuthContext';
@@ -120,9 +121,29 @@ function WebScrapingDashboard() {
   useEffect(() => {
     const fetchProjectsData = async () => {
       try {
+        console.log('🔍 [Dashboard] Fetching projects...');
         setIsLoading(true);
+        
+        // Get the current session to verify authentication
+        const { data: { session }, error: sessionError } = await supabase.auth.getSession();
+        console.log('🔍 [Dashboard] Current session:', { session, sessionError });
+        
+        if (sessionError || !session) {
+          console.error('❌ [Dashboard] No active session:', sessionError);
+          toast.error('Please sign in to view projects');
+          setIsLoading(false);
+          return;
+        }
+        
+        console.log('🔑 [Dashboard] Making API request with token:', 
+          session.access_token ? `${session.access_token.substring(0, 10)}...` : 'No token');
+          
         const data = await getProjects();
-        console.log('Fetched projects:', data);
+        console.log('✅ [Dashboard] Fetched projects:', data);
+
+        if (!data || !Array.isArray(data)) {
+          throw new Error(`Invalid projects data: ${JSON.stringify(data)}`);
+        }
 
         // Convert the backend projects to the format expected by the frontend
         const formattedProjects = data.map(project => ({
@@ -149,7 +170,14 @@ function WebScrapingDashboard() {
           loadProjectDataInBackground(formattedProjects);
         }
       } catch (error) {
-        console.error('Error fetching projects:', error);
+        console.error('❌ [Dashboard] Error fetching projects:', {
+          message: error.message,
+          name: error.name,
+          stack: error.stack,
+          response: error.response,
+          details: error.details
+        });
+        toast.error(`Failed to load projects: ${error.message}`);
         setIsLoading(false);
       }
     };

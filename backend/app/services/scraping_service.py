@@ -14,8 +14,6 @@ import os # Added for os.environ manipulation
 from ..database import supabase
 from ..models.scrape_session import ScrapedSessionResponse, InteractiveScrapingResponse, ExecuteScrapeResponse, ExecuteScrapeRequest
 from ..utils.browser_control import launch_browser_session # Keep for interactive, if still used
-# Removed: from app.utils.text_processing import structure_scraped_data, format_data_for_display
-# Removed: from app.utils.crawl4ai_crawler import scrape_url, extract_structured_data, AZURE_EMBEDDING_MODEL, AZURE_CHAT_MODEL
 from ..utils.text_processing import format_data_for_display # Added import
 
 # New imports from Scrape_Master modules
@@ -46,10 +44,10 @@ class ScrapingService:
         Returns:
             List[Dict[str, Any]]: List of URLs with their status and latest scrape data.
         """
-        # Get project URLs first (filtered by user_id for security)
+        # Get project URLs first (security is ensured by project ownership)
         project_urls_response = supabase.table("project_urls").select(
             "id, project_id, url, conditions, display_format, created_at, status, rag_enabled, last_scraped_session_id"
-        ).eq("project_id", str(project_id)).eq("user_id", str(user_id)).order("created_at", desc=True).execute()
+        ).eq("project_id", str(project_id)).order("created_at", desc=True).execute()
 
         if not project_urls_response.data:
             return []
@@ -64,7 +62,7 @@ class ScrapingService:
                 try:
                     session_response = supabase.table("scrape_sessions").select(
                         "id, project_id, url, scraped_at, status, raw_markdown, structured_data_json, display_format, formatted_tabular_data"
-                    ).eq("id", pu_entry["last_scraped_session_id"]).eq("user_id", str(user_id)).single().execute()
+                    ).eq("id", pu_entry["last_scraped_session_id"]).eq("project_id", str(project_id)).single().execute()
 
                     if session_response.data:
                         raw_session_data = session_response.data
@@ -229,13 +227,17 @@ class ScrapingService:
         Raises:
             HTTPException: If project not found or scraping fails
         """
-        # Check if project exists and get RAG status
+        # Check if project exists and get RAG status and user_id
         project_response = supabase.table("projects").select("*").eq("id", str(project_id)).single().execute()
         if not project_response.data:
             raise HTTPException(status_code=404, detail="Project not found")
 
         project = project_response.data
         rag_enabled_for_project = project.get("rag_enabled", False) # RAG enabled for the whole project
+        user_id = project.get("user_id")  # Get user_id from project ownership
+
+        if not user_id:
+            raise HTTPException(status_code=400, detail="Project has no associated user")
 
         # Extract parameters from the request
         current_page_url = request.current_page_url
@@ -277,6 +279,7 @@ class ScrapingService:
                 # Insert new entry with 'pending' status, will be updated to 'processing'
                 new_project_url_data = {
                     "project_id": str(project_id),
+                    "user_id": str(user_id),  # Include user_id to ensure proper ownership
                     "url": current_page_url,
                     "conditions": request_conditions or "title, description, price, content", # Default conditions if not provided
                     "display_format": display_format,
@@ -362,6 +365,7 @@ class ScrapingService:
         session_data = {
             "id": current_session_id,
             "project_id": str(project_id),
+            "user_id": str(user_id),  # Include user_id to ensure proper ownership
             "url": current_page_url,
             "scraped_at": datetime.now().isoformat(),  # Convert datetime to ISO string
             "raw_markdown": markdown_content,

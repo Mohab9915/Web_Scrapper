@@ -16,7 +16,6 @@ function CacheStatsDisplay({ className = '', refreshInterval }) {
       setStats(data);
       setLastUpdated(new Date());
     } catch (err) {
-      console.error('Error fetching cache stats:', err);
       setError('Failed to load cache statistics');
     } finally {
       setLoading(false);

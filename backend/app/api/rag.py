@@ -12,15 +12,21 @@ from ..services.chat_history_service import ChatHistoryService
 from ..services.enhanced_rag_service import EnhancedRAGService
 from ..dependencies.auth import get_current_user, get_current_user_id
 from ..models.auth import UserResponse
+from ..config import settings
+from ..database import supabase
 
 router = APIRouter(tags=["rag"])
+
+# Create a dependency that provides RAGService with settings
+def get_rag_service():
+    return RAGService(settings=settings)
 
 @router.get("/projects/{project_id}/chat", response_model=List[ChatMessageResponse])
 async def get_chat_messages(
     project_id: UUID,
     conversation_id: Optional[UUID] = None,
     current_user_id: UUID = Depends(get_current_user_id),
-    rag_service: RAGService = Depends()
+    rag_service: RAGService = Depends(get_rag_service)
 ):
     """
     Get chat messages for a project for the authenticated user.
@@ -39,7 +45,7 @@ async def get_chat_messages(
 async def query_rag(
     project_id: UUID,
     request: RAGQueryRequest,
-    rag_service: RAGService = Depends()
+    rag_service: RAGService = Depends(get_rag_service)
 ):
     """
     Query the RAG system using Azure OpenAI.
@@ -91,7 +97,7 @@ async def post_chat_message(
     conversation_id: Optional[UUID] = None,
     session_id: Optional[UUID] = None,
     current_user_id: UUID = Depends(get_current_user_id),
-    rag_service: RAGService = Depends()
+    rag_service: RAGService = Depends(get_rag_service)
 ):
     """
     Post a new chat message.
@@ -293,7 +299,6 @@ async def get_project_rag_status(project_id: UUID):
         Dict: RAG status information
     """
     try:
-        from app.database import supabase
 
         # Get project RAG enabled status
         project_response = supabase.table('projects').select('rag_enabled').eq('id', str(project_id)).single().execute()

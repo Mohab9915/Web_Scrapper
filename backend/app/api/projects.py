@@ -1,14 +1,17 @@
 """
 API endpoints for project management.
 """
+import json
+from ..services.enhanced_rag_service import EnhancedRAGService
+from ..database import supabase
+import os
 from fastapi import APIRouter, Depends, HTTPException, status
 from typing import List
 from uuid import UUID
 
 from ..models.project import ProjectCreate, ProjectUpdate, ProjectResponse
 from ..services.project_service import ProjectService
-from ..dependencies.auth import get_current_user, get_current_user_id
-from ..models.auth import UserResponse
+from ..dependencies.auth import get_current_user_id
 
 router = APIRouter(prefix="/projects", tags=["projects"])
 
@@ -124,7 +127,10 @@ async def delete_project(project_id: UUID, project_service: ProjectService = Dep
     return None
 
 @router.post("/{project_id}/enable-rag", response_model=ProjectResponse)
-async def enable_rag(project_id: UUID, project_service: ProjectService = Depends()):
+async def enable_rag_and_ingest_project_data(
+    project_id: UUID,
+    project_service: ProjectService = Depends()
+):
     """
     Enable RAG for a project and ingest all existing scraped sessions.
 
@@ -137,11 +143,6 @@ async def enable_rag(project_id: UUID, project_service: ProjectService = Depends
     Raises:
         HTTPException: If project not found
     """
-    from ..database import supabase
-    from ..services.enhanced_rag_service import EnhancedRAGService
-    import json
-    import os
-
     # First, enable RAG for the project
     project_update = ProjectUpdate(rag_enabled=True)
     updated_project = await project_service.update_project(project_id, project_update)
@@ -155,14 +156,12 @@ async def enable_rag(project_id: UUID, project_service: ProjectService = Depends
         sessions = sessions_response.data or []
 
         if sessions:
-            print(f"Found {len(sessions)} scraped sessions to ingest for project {project_id}")
-
             # Use Enhanced RAG service (same as working manual ingestion)
             enhanced_rag_service = EnhancedRAGService()
 
             # Get Azure credentials (same as working manual ingestion)
             azure_credentials = {
-                "api_key": os.getenv("AZURE_OPENAI_API_KEY", "dummy_key"),
+                "api_key": os.getenv("AZURE_OPENAI_API_KEY", "dummy_key"), # Make sure os is imported globally
                 "endpoint": os.getenv("AZURE_OPENAI_ENDPOINT", "dummy_endpoint"),
                 "deployment_name": os.getenv("AZURE_OPENAI_EMBEDDING_DEPLOYMENT", "text-embedding-ada-002")
             }
@@ -174,7 +173,6 @@ async def enable_rag(project_id: UUID, project_service: ProjectService = Depends
                 try:
                     # Check if session has structured data (same as working manual ingestion)
                     if not session.get('structured_data_json'):
-                        print(f"Session {session_id} has no structured data to ingest")
                         continue
 
                     # Parse structured data (same as working manual ingestion)
@@ -195,20 +193,17 @@ async def enable_rag(project_id: UUID, project_service: ProjectService = Depends
                         }).eq('id', session_id).execute()
 
                         ingested_count += 1
-                        print(f"Successfully ingested session {session_id}")
                     else:
-                        print(f"RAG ingestion completed with warnings for session {session_id}")
-
+                        pass # RAG ingestion may have completed with warnings
                 except Exception as e:
-                    print(f"Error ingesting session {session_id}: {str(e)}")
-                    continue
+                    pass # Error ingesting this specific session, continue with others
 
-            print(f"Successfully ingested {ingested_count} out of {len(sessions)} sessions")
         else:
-            print(f"No scraped sessions found for project {project_id}")
+            pass # No scraped sessions found
 
     except Exception as e:
-        print(f"Error during RAG ingestion: {str(e)}")
+        # Log this error appropriately in a real application
+        pass # Error during RAG ingestion
         # Don't fail the entire request if ingestion fails, RAG is still enabled
 
     return updated_project

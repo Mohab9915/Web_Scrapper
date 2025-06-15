@@ -48,23 +48,70 @@ console.log('  - Final API_URL:', API_URL);
 // Function to get authentication headers
 async function getAuthHeaders() {
   try {
-    console.log('🔑 Getting auth headers...');
+    console.log('🔑 [getAuthHeaders] Getting auth headers...');
+    
+    // Check if supabase is initialized
+    if (!supabase) {
+      console.error('🔴 [getAuthHeaders] Supabase client is not initialized');
+      return {};
+    }
+    
+    // Debug: Check if supabase.auth is available
+    if (!supabase.auth) {
+      console.error('🔴 [getAuthHeaders] supabase.auth is not available');
+      return {};
+    }
+    
+    // Get the current session
+    console.log('🔑 [getAuthHeaders] Calling supabase.auth.getSession()...');
     const { data: { session }, error } = await supabase.auth.getSession();
-    console.log('🔑 Session:', session ? 'Present' : 'Missing');
-    console.log('🔑 Error:', error);
+    
+    console.log('🔑 [getAuthHeaders] Session data:', {
+      hasSession: !!session,
+      user: session?.user?.email || 'No user',
+      accessToken: session?.access_token ? `${session.access_token.substring(0, 10)}...` : 'No token',
+      expiresAt: session?.expires_at ? new Date(session.expires_at * 1000).toISOString() : 'N/A',
+      error: error ? error.message : 'No error'
+    });
 
-    if (error || !session) {
-      console.log('🔑 No valid session, returning empty headers');
+    if (error) {
+      console.error('🔴 [getAuthHeaders] Error getting session:', error);
+      return {};
+    }
+    
+    if (!session?.access_token) {
+      console.error('🔴 [getAuthHeaders] No access token in session');
+      // Try to get the token from localStorage as a fallback
+      try {
+        const storedSession = JSON.parse(localStorage.getItem(`sb-${process.env.REACT_APP_SUPABASE_URL.split('//')[1].split('.')[0]}-auth-token`));
+        console.log('🔍 [getAuthHeaders] Fallback - Stored session from localStorage:', storedSession);
+        if (storedSession?.access_token) {
+          console.log('🟡 [getAuthHeaders] Using token from localStorage');
+          return {
+            'Authorization': `Bearer ${storedSession.access_token}`,
+            'Content-Type': 'application/json',
+          };
+        }
+      } catch (e) {
+        console.error('🔴 [getAuthHeaders] Error getting token from localStorage:', e);
+      }
       return {};
     }
 
     const headers = {
-      'Authorization': `Bearer ${session.access_token}`
+      'Authorization': `Bearer ${session.access_token}`,
+      'Content-Type': 'application/json',
     };
-    console.log('🔑 Auth headers created:', headers);
+    
+    console.log('🟢 [getAuthHeaders] Returning headers with auth token');
     return headers;
+    
   } catch (error) {
-    console.error('🔑 Error getting auth headers:', error);
+    console.error('🔴 [getAuthHeaders] Unexpected error getting auth headers:', {
+      error: error.toString(),
+      stack: error.stack,
+      message: error.message
+    });
     return {};
   }
 }
@@ -92,104 +139,183 @@ const AZURE_EMBEDDING_MODEL = "text-embedding-ada-002";
  * Error handling wrapper for fetch requests
  */
 async function fetchWithErrorHandling(url, options = {}) {
+  const requestId = Math.random().toString(36).substring(2, 8);
+  const startTime = Date.now();
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 300000); // 5 minute timeout for scraping operations
+  
   try {
-    console.log('🔄 Making API request to:', url);
-    console.log('📤 Request options:', options);
-
+    console.log(`🔄 [${requestId}] ${options.method || 'GET'} ${url}`);
+    
     // Get authentication headers
+    console.log(`🔑 [${requestId}] Getting auth headers...`);
     const authHeaders = await getAuthHeaders();
-
-    // Add default headers and timeout
-    const defaultOptions = {
+    
+    // Prepare request options
+    const requestOptions = {
+      method: options.method || 'GET',
       headers: {
         'Content-Type': 'application/json',
         ...authHeaders,
-        ...options.headers
+        ...options.headers,
       },
-      ...options
+      credentials: 'include', // Important for cookies, authorization headers with TLS
+      signal: controller.signal, // Add AbortController signal
+      ...options,
     };
-
-    // Add timeout to prevent hanging requests
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 30000); // 30 second timeout
-
-    const response = await fetch(url, {
-      ...defaultOptions,
-      signal: controller.signal
+    
+    console.log(`🔍 [${requestId}] Request options:`, {
+      method: requestOptions.method,
+      headers: Object.keys(requestOptions.headers).reduce((acc, key) => ({
+        ...acc,
+        [key]: key.toLowerCase() === 'authorization' 
+          ? `${requestOptions.headers[key].substring(0, 20)}...` 
+          : requestOptions.headers[key]
+      }), {}),
+      credentials: requestOptions.credentials,
+      body: requestOptions.body ? (typeof requestOptions.body === 'string' 
+        ? requestOptions.body.substring(0, 100) + '...' 
+        : '[Object]') : undefined
+    });
+    
+    // Log request details
+    console.log(`📤 [${requestId}] Request:`, {
+      method: requestOptions.method,
+      url,
+      headers: {
+        ...requestOptions.headers,
+        // Don't log the full auth token for security
+        ...(requestOptions.headers.Authorization ? {
+          Authorization: `${requestOptions.headers.Authorization.substring(0, 20)}...`
+        } : {})
+      },
+      body: requestOptions.body ? JSON.parse(requestOptions.body) : null
     });
 
-    clearTimeout(timeoutId);
-
-    if (!response.ok) {
-      let errorData;
-      let responseText = '';
-      try {
-        responseText = await response.text(); // Get text first
-        errorData = JSON.parse(responseText); // Try to parse as JSON
-      } catch (e) {
-        // Failed to parse as JSON
-        errorData = null; 
+    let response;
+    try {
+      console.log(`🌐 [${requestId}] Making fetch request to:`, url);
+      response = await fetch(url, requestOptions);
+      clearTimeout(timeoutId); // Clear the timeout if request succeeds
+    } catch (error) {
+      clearTimeout(timeoutId); // Clear the timeout if request fails
+      console.error(`❌ [${requestId}] Network error during fetch:`, {
+        error: error.toString(),
+        message: error.message,
+        name: error.name,
+        stack: error.stack,
+        url,
+        method: requestOptions.method,
+        headers: requestOptions.headers
+      });
+      
+      if (error.name === 'AbortError') {
+        throw new Error(`Request timed out after 5 minutes (${url})`);
       }
+      
+      throw new Error(`Network error: ${error.message}`);
+    }
+    
+    const responseTime = Date.now() - startTime;
+    
+    // Clone the response so we can safely read the body for debugging
+    const responseClone = response.clone();
 
-      let errorMessage;
-      if (errorData) { // If JSON parsing was successful
-        if (typeof errorData === 'string') {
-          errorMessage = errorData;
-        } else if (errorData.detail && typeof errorData.detail === 'string') {
-          errorMessage = errorData.detail;
-        } else if (errorData.detail && Array.isArray(errorData.detail)) {
-          // Handle Pydantic validation errors which come as an array
-          const firstError = errorData.detail[0];
-          if (firstError && firstError.msg) {
-            errorMessage = `Validation error: ${firstError.msg} at ${firstError.loc.join('.')}`;
-          } else {
-            errorMessage = 'Validation error in request';
-          }
-        } else if (errorData.message && typeof errorData.message === 'string') {
-          errorMessage = errorData.message;
-        } else {
-          // If we can't extract a string message, stringify the entire object
-          try {
-            errorMessage = `API error: ${JSON.stringify(errorData)}`;
-          } catch (stringifyError) {
-            errorMessage = `API error (unparseable JSON object): ${response.status}`;
-          }
-        }
-      } else { // If JSON parsing failed, use the responseText or a generic message
-        if (responseText && responseText.length < 500 && !responseText.trim().startsWith('<') && responseText.trim() !== '') { // Avoid long HTML pages and empty strings
-          errorMessage = responseText;
-        } else {
-          errorMessage = `API error: ${response.status} ${response.statusText || 'Server error'}`;
-        }
-      }
-      throw new Error(errorMessage);
+    // Read body from the clone only – keeps the original stream intact
+    const debugText = await responseClone.text();
+
+    // Log response details using the cloned body
+    let responseData;
+    try {
+      responseData = debugText ? JSON.parse(debugText) : null;
+    } catch (e) {
+      responseData = debugText;
     }
 
-    // Check if response is empty and handle JSON parsing errors
-    let text = '';
-    try {
-      // Get response text first
-      text = await response.text();
-      console.log('📥 Raw response text (first 500 chars):', text.substring(0, 500));
+    console.log(`📥 [${requestId}] Response (${response.status} in ${responseTime}ms):`, {
+      status: response.status,
+      statusText: response.statusText,
+      headers: Object.fromEntries([...response.headers.entries()]),
+      data: responseData
+    });
 
-      // If empty response, return empty object
-      if (!text || text.trim() === '') {
-        console.warn('⚠️ Empty response received from API');
-        return {};
+    if (!response.ok) {
+      const errorDetails = {
+        status: response.status,
+        statusText: response.statusText,
+        url,
+        error: responseData || 'No error details available',
+        headers: Object.fromEntries([...response.headers.entries()])
+      };
+
+      console.error(`🔴 [${requestId}] API request failed:`, errorDetails);
+
+      // Create a more detailed error object
+      let errorMessage = 'API request failed';
+      
+      if (responseData) {
+        if (typeof responseData === 'string') {
+          errorMessage = responseData;
+        } else if (responseData.detail) {
+          errorMessage = Array.isArray(responseData.detail) 
+            ? `Validation error: ${responseData.detail.map(d => d.msg).join(', ')}`
+            : String(responseData.detail);
+        } else if (responseData.message) {
+          errorMessage = responseData.message;
+        } else if (typeof responseData === 'object') {
+          errorMessage = JSON.stringify(responseData);
+        }
+      } else if (debugText) {
+        errorMessage = debugText.length < 500 ? debugText : 'Response too large to display';
+      } else {
+        errorMessage = `HTTP ${response.status} ${response.statusText}`;
       }
 
+      const error = new Error(errorMessage);
+      error.details = errorDetails;
+      error.status = response.status;
+      error.response = responseData;
+      
+      // Log additional info for 401/403 errors
+      if (response.status === 401 || response.status === 403) {
+        console.error('🔴 Authentication/Authorization Error:', {
+          url,
+          hasAuthHeader: !!requestOptions.headers.Authorization,
+          authHeaderLength: requestOptions.headers.Authorization ? requestOptions.headers.Authorization.length : 0,
+          authHeaderPrefix: requestOptions.headers.Authorization ? 
+            requestOptions.headers.Authorization.substring(0, 20) + '...' : 'None'
+        });
+      }
+
+      throw error;
+    }
+
+    // Process successful response
+    if (response.status === 204 || response.status === 205) {
+      // No content response
+      return null;
+    }
+
+    // Get response text from the original response stream (first time it's read)
+    const text = await response.text();
+    console.log(`📄 [${requestId}] Raw response (${text.length} chars):`, text.length > 500 ? text.substring(0, 500) + '...' : text);
+
+    // If empty response, return null
+    if (!text || text.trim() === '') {
+      console.warn(`⚠️ [${requestId}] Empty response received from API`);
+      return null;
+    }
+
+    try {
       // Parse JSON and transform snake_case keys to camelCase
       const data = JSON.parse(text);
-      console.log('📊 Parsed JSON data:', data);
-      
       const transformedData = transformKeys(data);
-      console.log('🔄 Transformed data:', transformedData);
-      
+      console.log(`✅ [${requestId}] Successfully parsed and transformed response`);
       return transformedData;
     } catch (jsonError) {
-      console.error('❌ Error parsing JSON response:', jsonError);
-      console.error('📄 Response text that failed to parse:', text);
-      return {};
+      console.error(`❌ [${requestId}] Error parsing JSON response:`, jsonError);
+      console.error(`📄 [${requestId}] Response text that failed to parse:`, text);
+      throw new Error(`Failed to parse response: ${jsonError.message}`);
     }
   } catch (error) {
     if (error.name === 'AbortError') {
