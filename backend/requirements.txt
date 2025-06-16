@@ -20,3 +20,4 @@ playwright>=1.40.0      # Browser automation for web scraping
 azure-identity>=1.12.0  # For Azure authentication (if needed)
 azure-core>=1.26.0      # Core functionality for Azure SDK
 psutil>=5.9.0           # For system resource monitoring
+matplotlib>=3.7.0       # For chart generation
